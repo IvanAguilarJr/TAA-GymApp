@@ -20,6 +20,8 @@ import {
   getExerciseById,
   logWeight,
   updateExercise,
+  updateHistoryEntry,
+  deleteHistoryEntry,
 } from "@/firebase/exercises";
 import { Exercise, Day, ALL_DAYS } from "@/firebase/types";
 
@@ -48,7 +50,7 @@ export default function ExerciseDetail() {
   const [weightFocused, setWeightFocused] = useState(false);
   const [logging, setLogging] = useState(false);
 
-  // Edit modal
+  // Edit exercise modal
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editName, setEditName] = useState("");
   const [editSets, setEditSets] = useState("");
@@ -58,6 +60,13 @@ export default function ExerciseDetail() {
   const [editSetsFocused, setEditSetsFocused] = useState(false);
   const [editRepsFocused, setEditRepsFocused] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Edit history entry modal
+  const [editEntryModalVisible, setEditEntryModalVisible] = useState(false);
+  const [editEntryIndex, setEditEntryIndex] = useState<number | null>(null);
+  const [editEntryWeight, setEditEntryWeight] = useState("");
+  const [editEntryFocused, setEditEntryFocused] = useState(false);
+  const [savingEntry, setSavingEntry] = useState(false);
 
   const fetchExercise = async () => {
     setLoading(true);
@@ -137,6 +146,73 @@ export default function ExerciseDetail() {
     }
   };
 
+  // Long press on a history entry
+  const handleHistoryLongPress = (originalIndex: number, weight: number) => {
+    Alert.alert(
+      "Edit entry",
+      `What would you like to do with this ${weight} kg entry?`,
+      [
+        {
+          text: "Edit weight",
+          onPress: () => {
+            setEditEntryIndex(originalIndex);
+            setEditEntryWeight(String(weight));
+            setEditEntryModalVisible(true);
+          },
+        },
+        {
+          text: "Delete entry",
+          style: "destructive",
+          onPress: () => handleDeleteEntry(originalIndex),
+        },
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
+  };
+
+  const handleSaveEntryEdit = async () => {
+    if (editEntryIndex === null) return;
+    const newWeight = parseFloat(editEntryWeight);
+    if (isNaN(newWeight) || newWeight <= 0) {
+      Alert.alert("Invalid value", "Please enter a valid weight.");
+      return;
+    }
+    setSavingEntry(true);
+    try {
+      await updateHistoryEntry(userId, exercise!, editEntryIndex, newWeight);
+      setEditEntryModalVisible(false);
+      setEditEntryIndex(null);
+      setEditEntryWeight("");
+      await fetchExercise();
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
+    } finally {
+      setSavingEntry(false);
+    }
+  };
+
+  const handleDeleteEntry = (originalIndex: number) => {
+    Alert.alert(
+      "Delete entry",
+      "Are you sure you want to delete this session entry?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteHistoryEntry(userId, exercise!, originalIndex);
+              await fetchExercise();
+            } catch (err: any) {
+              Alert.alert("Error", err.message);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const formatDate = (iso: string) => {
     const date = new Date(iso);
     return date.toLocaleDateString("en-US", {
@@ -177,7 +253,11 @@ export default function ExerciseDetail() {
     );
   }
 
-  const sortedHistory = [...exercise.history].reverse();
+  // Reverse for display but keep original index for Firestore operations
+  const sortedHistory = exercise.history
+    .map((entry, originalIndex) => ({ ...entry, originalIndex }))
+    .reverse();
+
   const lastSession = sortedHistory[0];
 
   return (
@@ -256,7 +336,12 @@ export default function ExerciseDetail() {
         </TouchableOpacity>
 
         {/* History */}
-        <Text style={styles.sectionTitle}>History</Text>
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionTitle}>History</Text>
+          {sortedHistory.length > 0 && (
+            <Text style={styles.sectionHint}>Long press to edit or delete</Text>
+          )}
+        </View>
 
         {sortedHistory.length === 0 ? (
           <View style={styles.emptyHistory}>
@@ -267,10 +352,18 @@ export default function ExerciseDetail() {
             </Text>
           </View>
         ) : (
-          sortedHistory.map((entry, index) => {
+          sortedHistory.map((entry) => {
             const isPR = entry.weight === exercise.maxWeight;
             return (
-              <View key={index} style={styles.historyCard}>
+              <TouchableOpacity
+                key={entry.originalIndex}
+                style={styles.historyCard}
+                onLongPress={() =>
+                  handleHistoryLongPress(entry.originalIndex, entry.weight)
+                }
+                delayLongPress={400}
+                activeOpacity={0.8}
+              >
                 <View style={styles.historyLeft}>
                   <Text style={styles.historyDate}>
                     {formatDate(entry.date)}
@@ -286,8 +379,9 @@ export default function ExerciseDetail() {
                     </View>
                   )}
                   <Text style={styles.historyWeight}>{entry.weight} kg</Text>
+                  <Text style={styles.longPressHint}>⋮</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })
         )}
@@ -369,7 +463,7 @@ export default function ExerciseDetail() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── Edit Modal ── */}
+      {/* ── Edit Exercise Modal ── */}
       <Modal
         visible={editModalVisible}
         animationType="slide"
@@ -433,7 +527,6 @@ export default function ExerciseDetail() {
               </View>
             </View>
 
-            {/* Day picker */}
             <Text style={styles.fieldLabel}>WORKOUT DAY</Text>
             <View style={styles.dayGrid}>
               {ALL_DAYS.map((day) => (
@@ -477,6 +570,71 @@ export default function ExerciseDetail() {
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Edit History Entry Modal ── */}
+      <Modal
+        visible={editEntryModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setEditEntryModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setEditEntryModalVisible(false)}
+          />
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Edit Entry</Text>
+            <Text style={styles.modalSubtitle}>
+              Correct the weight for this session
+            </Text>
+
+            <Text style={styles.fieldLabel}>WEIGHT (KG)</Text>
+            <TextInput
+              value={editEntryWeight}
+              onChangeText={setEditEntryWeight}
+              onFocus={() => setEditEntryFocused(true)}
+              onBlur={() => setEditEntryFocused(false)}
+              placeholder="e.g. 80"
+              placeholderTextColor="#C4BFB8"
+              keyboardType="decimal-pad"
+              style={[styles.input, editEntryFocused && styles.inputFocused]}
+              autoFocus
+            />
+
+            <TouchableOpacity
+              style={[
+                styles.confirmBtn,
+                savingEntry && styles.confirmBtnDisabled,
+              ]}
+              onPress={handleSaveEntryEdit}
+              activeOpacity={0.85}
+              disabled={savingEntry}
+            >
+              <Text style={styles.confirmBtnText}>
+                {savingEntry ? "Saving…" : "Save Changes"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => {
+                setEditEntryModalVisible(false);
+                setEditEntryIndex(null);
+                setEditEntryWeight("");
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
@@ -575,17 +733,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
   },
-  metaPillDay: {
-    backgroundColor: "#EEF2FF",
-  },
-  metaPillText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#1A1714",
-  },
-  metaPillDayText: {
-    color: "#4338CA",
-  },
+  metaPillDay: { backgroundColor: "#EEF2FF" },
+  metaPillText: { fontSize: 13, fontWeight: "600", color: "#1A1714" },
+  metaPillDayText: { color: "#4338CA" },
 
   // Stats row
   statsRow: {
@@ -614,11 +764,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
-  statDivider: {
-    width: 1,
-    backgroundColor: "#EEEBE6",
-    marginVertical: 4,
-  },
+  statDivider: { width: 1, backgroundColor: "#EEEBE6", marginVertical: 4 },
 
   // Log button
   logBtn: {
@@ -636,15 +782,25 @@ const styles = StyleSheet.create({
   },
 
   // Section title
+  sectionTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
     color: "#1A1714",
-    marginBottom: 14,
     letterSpacing: -0.3,
   },
+  sectionHint: {
+    fontSize: 11,
+    color: "#C4BFB8",
+    fontWeight: "500",
+  },
 
-  // History
+  // History cards
   historyCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 14,
@@ -672,6 +828,7 @@ const styles = StyleSheet.create({
   },
   prText: { fontSize: 11, fontWeight: "700", color: "#854D0E" },
   historyWeight: { fontSize: 16, fontWeight: "700", color: "#1A1714" },
+  longPressHint: { fontSize: 18, color: "#C4BFB8", fontWeight: "700" },
 
   // Empty history
   emptyHistory: {
@@ -681,11 +838,7 @@ const styles = StyleSheet.create({
   },
   emptyHistoryIcon: { fontSize: 40, marginBottom: 4 },
   emptyHistoryText: { fontSize: 16, fontWeight: "700", color: "#1A1714" },
-  emptyHistorySubtext: {
-    fontSize: 13,
-    color: "#9E9890",
-    textAlign: "center",
-  },
+  emptyHistorySubtext: { fontSize: 13, color: "#9E9890", textAlign: "center" },
 
   // Modal
   modalOverlay: { flex: 1, justifyContent: "flex-end" },
@@ -693,9 +846,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(26, 23, 20, 0.4)",
   },
-  modalScrollWrapper: {
-    maxHeight: "90%",
-  },
+  modalScrollWrapper: { maxHeight: "90%" },
   modalSheet: {
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 28,
@@ -771,7 +922,7 @@ const styles = StyleSheet.create({
   inputFocused: { borderColor: "#1A1714", backgroundColor: "#FFFFFF" },
   row: { flexDirection: "row" },
 
-  // Day grid (edit modal)
+  // Day grid
   dayGrid: { gap: 8, marginTop: 4 },
   dayGridItem: {
     flexDirection: "row",
@@ -784,10 +935,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "transparent",
   },
-  dayGridItemSelected: {
-    backgroundColor: "#1A1714",
-    borderColor: "#1A1714",
-  },
+  dayGridItemSelected: { backgroundColor: "#1A1714", borderColor: "#1A1714" },
   dayGridText: { fontSize: 15, fontWeight: "600", color: "#1A1714" },
   dayGridTextSelected: { color: "#F7F5F2" },
 
@@ -806,11 +954,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
   },
-  cancelBtn: {
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 8,
-  },
+  cancelBtn: { paddingVertical: 14, alignItems: "center", marginTop: 8 },
   cancelBtnText: { color: "#9E9890", fontSize: 15, fontWeight: "600" },
   backLink: { fontSize: 15, color: "#1A1714", fontWeight: "600" },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: "#1A1714" },

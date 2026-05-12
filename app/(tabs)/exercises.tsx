@@ -3,30 +3,35 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
-  SectionList,
-  ScrollView,
-  FlatList,
   Modal,
   TextInput,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   Alert,
+  ScrollView,
+  SectionList,
 } from "react-native";
-import { useState, useEffect, useCallback } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useState, useCallback } from "react";
 import { auth } from "@/firebase/config";
 import {
   getExercises,
   addExercise,
   deleteExercise,
   updateExerciseDay,
+  updateExercisesOrder,
+  initializeExerciseOrder,
 } from "@/firebase/exercises";
-import { Exercise, day, ALL_DAYS } from "@/firebase/types";
+import { Exercise, Day, ALL_DAYS } from "@/firebase/types";
 import { useRouter, useFocusEffect } from "expo-router";
+import DraggableFlatList, {
+  RenderItemParams,
+  ScaleDecorator,
+} from "react-native-draggable-flatlist";
+import Swipeable from "react-native-gesture-handler/Swipeable";
 
-// full label for section headers
 const DAY_LABELS: Record<Day, string> = {
   Mon: "Monday",
   Tue: "Tuesday",
@@ -44,39 +49,33 @@ type Section = {
   data: Exercise[];
 };
 
-//TODO: Finish the file in order to group the exercises into sections of days. Also add system for long-press and updating date of exercise.
-
 export default function Exercises() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [adding, setAdding] = useState(false);
 
   // Add modal
   const [addModalVisible, setAddModalVisible] = useState(false);
-
-  // New exercise form state
+  const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [sets, setSets] = useState("");
   const [reps, setReps] = useState("");
   const [selectedDay, setSelectedDay] = useState<Day>("None");
-
-  // Focus states
   const [nameFocused, setNameFocused] = useState(false);
   const [setsFocused, setSetsFocused] = useState(false);
   const [repsFocused, setRepsFocused] = useState(false);
 
-  // Move day modal (longpress)
+  // Move day modal
   const [moveModalVisible, setMoveModalVisible] = useState(false);
   const [movingExercise, setMovingExercise] = useState<Exercise | null>(null);
   const [moving, setMoving] = useState(false);
 
   const router = useRouter();
-  const userId = auth.currentUser?.uid;
+  const userId = auth.currentUser?.uid ?? "";
 
   const fetchExercises = async () => {
     setLoading(true);
     try {
+      await initializeExerciseOrder(userId);
       const data = await getExercises(userId);
       setExercises(data);
     } catch (err: any) {
@@ -86,14 +85,13 @@ export default function Exercises() {
     }
   };
 
-  // Refresh list every time the screen comes into focus
   useFocusEffect(
     useCallback(() => {
       fetchExercises();
     }, []),
   );
 
-  // Build sections - only include days that have exercises, always show None at end.
+  // Build sections — only days with exercises, in ALL_DAYS order
   const sections: Section[] = ALL_DAYS.reduce<Section[]>((acc, day) => {
     const dayExercises = exercises.filter((e) => e.day === day);
     if (dayExercises.length > 0) {
@@ -155,7 +153,7 @@ export default function Exercises() {
     );
   };
 
-  const handleLongPress = (exercise: Exercise) => {
+  const handleOpenMoveModal = (exercise: Exercise) => {
     setMovingExercise(exercise);
     setMoveModalVisible(true);
   };
@@ -175,49 +173,85 @@ export default function Exercises() {
     }
   };
 
-  const renderExercise = ({ item }: { item: Exercise }) => (
+  const handleDragEnd = async (day: Day, reordered: Exercise[]) => {
+    // Optimistically update UI
+    setExercises((prev) => {
+      const otherDays = prev.filter((e) => e.day !== day);
+      return [...otherDays, ...reordered];
+    });
+    // Persist to Firestore
+    try {
+      await updateExercisesOrder(userId, reordered);
+    } catch (err: any) {
+      Alert.alert("Error saving order", err.message);
+      await fetchExercises(); // revert on failure
+    }
+  };
+
+  // Swipe left action — reveals "Move Day" button
+  const renderRightActions = (exercise: Exercise) => (
     <TouchableOpacity
-      style={styles.exerciseCard}
-      onPress={() => router.push(`/exercise/${item.id}`)}
-      onLongPress={() => handleLongPress(item)}
-      delayLongPress={400}
-      activeOpacity={0.8}
+      style={styles.swipeAction}
+      onPress={() => handleOpenMoveModal(exercise)}
+      activeOpacity={0.85}
     >
-      <View style={styles.exerciseLeft}>
-        <View style={styles.exerciseIconBox}>
-          <Text style={styles.exerciseIcon}>💪</Text>
-        </View>
-        <View>
-          <Text style={styles.exerciseName}>{item.name}</Text>
-          <Text style={styles.exerciseMeta}>
-            {item.sets} sets · {item.reps} reps
-          </Text>
-        </View>
-      </View>
-      <View style={styles.exerciseRight}>
-        {item.maxWeight > 0 && (
-          <View style={styles.prBadge}>
-            <Text style={styles.prText}>🏆 {item.maxWeight} kg</Text>
-          </View>
-        )}
-        <TouchableOpacity
-          onPress={() => handleDelete(item)}
-          style={styles.deleteBtn}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Text style={styles.deleteBtnText}>✕</Text>
-        </TouchableOpacity>
-      </View>
+      <Text style={styles.swipeActionText}>📅</Text>
+      <Text style={styles.swipeActionLabel}>Move Day</Text>
     </TouchableOpacity>
   );
 
-  const renderSectionHeader = ({ section }: { section: Section }) => (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionHeaderText}>{section.title}</Text>
-      <Text style={styles.sectionCount}>
-        {section.data.length} exercise{section.data.length !== 1 ? "s" : ""}
-      </Text>
-    </View>
+  const renderDraggableItem = (
+    day: Day,
+    { item, drag, isActive }: RenderItemParams<Exercise>,
+  ) => (
+    <ScaleDecorator activeScale={1.03}>
+      <Swipeable
+        renderRightActions={() => renderRightActions(item)}
+        overshootRight={false}
+      >
+        <TouchableOpacity
+          style={[styles.exerciseCard, isActive && styles.exerciseCardActive]}
+          onPress={() => router.push(`/exercise/${item.id}`)}
+          onLongPress={drag}
+          delayLongPress={200}
+          activeOpacity={0.8}
+        >
+          <View style={styles.exerciseLeft}>
+            <TouchableOpacity
+              onLongPress={drag}
+              delayLongPress={200}
+              style={styles.dragHandle}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.dragHandleIcon}>⠿</Text>
+            </TouchableOpacity>
+            <View style={styles.exerciseIconBox}>
+              <Text style={styles.exerciseIcon}>💪</Text>
+            </View>
+            <View>
+              <Text style={styles.exerciseName}>{item.name}</Text>
+              <Text style={styles.exerciseMeta}>
+                {item.sets} sets · {item.reps} reps
+              </Text>
+            </View>
+          </View>
+          <View style={styles.exerciseRight}>
+            {item.maxWeight > 0 && (
+              <View style={styles.prBadge}>
+                <Text style={styles.prText}>🏆 {item.maxWeight} kg</Text>
+              </View>
+            )}
+            <TouchableOpacity
+              onPress={() => handleDelete(item)}
+              style={styles.deleteBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.deleteBtnText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Swipeable>
+    </ScaleDecorator>
   );
 
   return (
@@ -246,7 +280,7 @@ export default function Exercises() {
         {exercises.length > 0 && (
           <View style={styles.hintBox}>
             <Text style={styles.hintText}>
-              💡 Long press any exercise to move it to a different day
+              ⠿ Long press to reorder · Swipe left to move day
             </Text>
           </View>
         )}
@@ -265,15 +299,37 @@ export default function Exercises() {
             </Text>
           </View>
         ) : (
-          <SectionList
-            sections={sections}
-            keyExtractor={(item) => item.id}
-            renderItem={renderExercise}
-            renderSectionHeader={renderSectionHeader}
-            contentContainerStyle={{ paddingBottom: 32 }}
+          // Outer ScrollView for the whole page
+          // Each day section gets its own DraggableFlatList
+          <ScrollView
             showsVerticalScrollIndicator={false}
-            stickySectionHeadersEnabled={false}
-          />
+            contentContainerStyle={{ paddingBottom: 32 }}
+          >
+            {sections.map((section) => (
+              <View key={section.day}>
+                {/* Section header */}
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionHeaderText}>{section.title}</Text>
+                  <Text style={styles.sectionCount}>
+                    {section.data.length} exercise
+                    {section.data.length !== 1 ? "s" : ""}
+                  </Text>
+                </View>
+
+                {/* Draggable list for this day */}
+                <DraggableFlatList
+                  data={section.data}
+                  keyExtractor={(item) => item.id}
+                  renderItem={(params) =>
+                    renderDraggableItem(section.day, params)
+                  }
+                  onDragEnd={({ data }) => handleDragEnd(section.day, data)}
+                  scrollEnabled={false} // outer ScrollView handles scrolling
+                  activationDistance={5}
+                />
+              </View>
+            ))}
+          </ScrollView>
         )}
       </View>
 
@@ -389,7 +445,7 @@ export default function Exercises() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── Move Day Modal (long press) ── */}
+      {/* ── Move Day Modal ── */}
       <Modal
         visible={moveModalVisible}
         animationType="slide"
@@ -455,21 +511,9 @@ export default function Exercises() {
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#F7F5F2",
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 20,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-  },
+  safe: { flex: 1, backgroundColor: "#F7F5F2" },
+  container: { flex: 1, paddingHorizontal: 24, paddingTop: 20 },
+  centered: { flex: 1, justifyContent: "center", alignItems: "center", gap: 8 },
 
   // Header
   header: {
@@ -516,11 +560,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 1,
   },
-  hintText: {
-    fontSize: 12,
-    color: "#9E9890",
-    fontWeight: "500",
-  },
+  hintText: { fontSize: 12, color: "#9E9890", fontWeight: "500" },
 
   // Section header
   sectionHeader: {
@@ -537,11 +577,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: "uppercase",
   },
-  sectionCount: {
-    fontSize: 12,
-    color: "#9E9890",
-    fontWeight: "500",
-  },
+  sectionCount: { fontSize: 12, color: "#9E9890", fontWeight: "500" },
 
   // Exercise card
   exerciseCard: {
@@ -558,34 +594,44 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
+  exerciseCardActive: {
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+    backgroundColor: "#FAFAF9",
+  },
   exerciseLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
     flex: 1,
   },
+  dragHandle: {
+    paddingHorizontal: 4,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  dragHandleIcon: {
+    fontSize: 18,
+    color: "#C4BFB8",
+    letterSpacing: -2,
+  },
   exerciseIconBox: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     borderRadius: 12,
     backgroundColor: "#F7F5F2",
     justifyContent: "center",
     alignItems: "center",
   },
-  exerciseIcon: {
-    fontSize: 22,
-  },
+  exerciseIcon: { fontSize: 20 },
   exerciseName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: "#1A1714",
     marginBottom: 3,
   },
-  exerciseMeta: {
-    fontSize: 13,
-    color: "#9E9890",
-    fontWeight: "500",
-  },
+  exerciseMeta: { fontSize: 12, color: "#9E9890", fontWeight: "500" },
   exerciseRight: {
     flexDirection: "row",
     alignItems: "center",
@@ -597,11 +643,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 8,
   },
-  prText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#854D0E",
-  },
+  prText: { fontSize: 11, fontWeight: "700", color: "#854D0E" },
   deleteBtn: {
     width: 28,
     height: 28,
@@ -610,22 +652,29 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  deleteBtnText: {
-    fontSize: 12,
-    color: "#EF4444",
+  deleteBtnText: { fontSize: 12, color: "#EF4444", fontWeight: "700" },
+
+  // Swipe action
+  swipeAction: {
+    backgroundColor: "#1A1714",
+    justifyContent: "center",
+    alignItems: "center",
+    width: 80,
+    borderRadius: 16,
+    marginBottom: 10,
+    gap: 4,
+  },
+  swipeActionText: { fontSize: 20 },
+  swipeActionLabel: {
+    fontSize: 11,
     fontWeight: "700",
+    color: "#F7F5F2",
+    letterSpacing: 0.3,
   },
 
   // Empty state
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 8,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1A1714",
-  },
+  emptyIcon: { fontSize: 48, marginBottom: 8 },
+  emptyTitle: { fontSize: 18, fontWeight: "700", color: "#1A1714" },
   emptySubtitle: {
     fontSize: 14,
     color: "#9E9890",
@@ -634,10 +683,7 @@ const styles = StyleSheet.create({
   },
 
   // Modal shared
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
+  modalOverlay: { flex: 1, justifyContent: "flex-end" },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(26, 23, 20, 0.4)",
@@ -692,22 +738,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "transparent",
   },
-  inputFocused: {
-    borderColor: "#1A1714",
-    backgroundColor: "#FFFFFF",
-  },
-  row: {
-    flexDirection: "row",
-  },
+  inputFocused: { borderColor: "#1A1714", backgroundColor: "#FFFFFF" },
+  row: { flexDirection: "row" },
 
-  // Day picker (horizontal scroll chips)
-  dayScroll: {
-    marginTop: 4,
-  },
-  dayScrollContent: {
-    gap: 8,
-    paddingVertical: 4,
-  },
+  // Day picker chips
+  dayScroll: { marginTop: 4 },
+  dayScrollContent: { gap: 8, paddingVertical: 4 },
   dayChip: {
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -716,24 +752,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "transparent",
   },
-  dayChipSelected: {
-    backgroundColor: "#1A1714",
-    borderColor: "#1A1714",
-  },
-  dayChipText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#9E9890",
-  },
-  dayChipTextSelected: {
-    color: "#F7F5F2",
-  },
+  dayChipSelected: { backgroundColor: "#1A1714", borderColor: "#1A1714" },
+  dayChipText: { fontSize: 14, fontWeight: "600", color: "#9E9890" },
+  dayChipTextSelected: { color: "#F7F5F2" },
 
   // Day grid (move modal)
-  dayGrid: {
-    marginTop: 16,
-    gap: 10,
-  },
+  dayGrid: { gap: 10, marginTop: 8 },
   dayGridItem: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -745,21 +769,10 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "transparent",
   },
-  dayGridItemCurrent: {
-    borderColor: "#1A1714",
-    backgroundColor: "#FFFFFF",
-  },
-  dayGridItemDisabled: {
-    opacity: 0.5,
-  },
-  dayGridText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#1A1714",
-  },
-  dayGridTextCurrent: {
-    fontWeight: "700",
-  },
+  dayGridItemCurrent: { borderColor: "#1A1714", backgroundColor: "#FFFFFF" },
+  dayGridItemDisabled: { opacity: 0.5 },
+  dayGridText: { fontSize: 15, fontWeight: "600", color: "#1A1714" },
+  dayGridTextCurrent: { fontWeight: "700" },
   currentDayBadge: {
     fontSize: 11,
     fontWeight: "600",
@@ -776,9 +789,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 24,
   },
-  confirmBtnDisabled: {
-    backgroundColor: "#9E9890",
-  },
+  confirmBtnDisabled: { backgroundColor: "#9E9890" },
   confirmBtnText: {
     color: "#F7F5F2",
     fontSize: 16,
@@ -790,9 +801,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 8,
   },
-  cancelBtnText: {
-    color: "#9E9890",
-    fontSize: 15,
-    fontWeight: "600",
-  },
+  cancelBtnText: { color: "#9E9890", fontSize: 15, fontWeight: "600" },
 });

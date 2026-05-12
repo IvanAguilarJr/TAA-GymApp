@@ -8,12 +8,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  SafeAreaView,
   ScrollView,
   ActivityIndicator,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useState, useCallback } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const DAY_FULL: Record<Day, string> = {
   Mon: "Monday",

@@ -43,4 +43,6 @@ export type Exercise = {
   maxWeight: number;
   history: WeightEntry[];
   createdAt: string;
+  day: Day;
+  order: number;
 };

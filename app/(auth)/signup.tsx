@@ -7,7 +7,9 @@ import {
   SafeAreaView,
   StatusBar,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { useState } from "react";
 import { createUserWithEmailAndPassword } from "firebase/auth";
@@ -54,98 +56,102 @@ export default function Signup() {
     confirmPassword.length > 0 && password !== confirmPassword;
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F7F5F2" />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <View style={styles.container}>
-          {/* Branding */}
-          <View style={styles.brandBlock}>
-            <View style={styles.logoBox}>
-              <Text style={styles.logoText}>TAA</Text>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <SafeAreaView style={styles.safe}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F7F5F2" />
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={styles.container}>
+            {/* Branding */}
+            <View style={styles.brandBlock}>
+              <View style={styles.logoBox}>
+                <Text style={styles.logoText}>TAA</Text>
+              </View>
+              <Text style={styles.title}>Create account</Text>
+              <Text style={styles.subtitle}>Sign up to get started</Text>
             </View>
-            <Text style={styles.title}>Create account</Text>
-            <Text style={styles.subtitle}>Sign up to get started</Text>
+
+            {/* Form card */}
+            <View style={styles.card}>
+              <View style={styles.cardAccent} />
+
+              <Text style={styles.fieldLabel}>EMAIL</Text>
+              <TextInput
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={email}
+                onChangeText={setEmail}
+                onFocus={() => setEmailFocused(true)}
+                onBlur={() => setEmailFocused(false)}
+                placeholder="you@example.com"
+                placeholderTextColor="#C4BFB8"
+                style={[styles.input, emailFocused && styles.inputFocused]}
+              />
+
+              <Text style={styles.fieldLabel}>PASSWORD</Text>
+              <TextInput
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+                onFocus={() => setPasswordFocused(true)}
+                onBlur={() => setPasswordFocused(false)}
+                placeholder="Min. 6 characters"
+                placeholderTextColor="#C4BFB8"
+                style={[styles.input, passwordFocused && styles.inputFocused]}
+              />
+
+              <Text style={styles.fieldLabel}>CONFIRM PASSWORD</Text>
+              <TextInput
+                secureTextEntry
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                onFocus={() => setConfirmFocused(true)}
+                onBlur={() => setConfirmFocused(false)}
+                placeholder="Re-enter password"
+                placeholderTextColor="#C4BFB8"
+                style={[
+                  styles.input,
+                  confirmFocused && styles.inputFocused,
+                  passwordsMatch && styles.inputValid,
+                  passwordsMismatch && styles.inputInvalid,
+                ]}
+              />
+              {passwordsMismatch && (
+                <Text style={styles.errorText}>Passwords do not match</Text>
+              )}
+              {passwordsMatch && (
+                <Text style={styles.successText}>Passwords match ✓</Text>
+              )}
+
+              <TouchableOpacity
+                style={[styles.signupBtn, loading && styles.signupBtnDisabled]}
+                onPress={signup}
+                activeOpacity={0.85}
+                disabled={loading}
+              >
+                <Text style={styles.signupBtnText}>
+                  {loading ? "Creating account…" : "Create account"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Footer */}
+            <View style={styles.footerRow}>
+              <Text style={styles.footerText}>Already have an account? </Text>
+              <Link href="/login" style={styles.footerLink}>
+                Sign in
+              </Link>
+            </View>
+
+            <Text style={styles.copyright}>
+              TAA • {new Date().getFullYear()}
+            </Text>
           </View>
-
-          {/* Form card */}
-          <View style={styles.card}>
-            <View style={styles.cardAccent} />
-
-            <Text style={styles.fieldLabel}>EMAIL</Text>
-            <TextInput
-              autoCapitalize="none"
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
-              onFocus={() => setEmailFocused(true)}
-              onBlur={() => setEmailFocused(false)}
-              placeholder="you@example.com"
-              placeholderTextColor="#C4BFB8"
-              style={[styles.input, emailFocused && styles.inputFocused]}
-            />
-
-            <Text style={styles.fieldLabel}>PASSWORD</Text>
-            <TextInput
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-              onFocus={() => setPasswordFocused(true)}
-              onBlur={() => setPasswordFocused(false)}
-              placeholder="Min. 6 characters"
-              placeholderTextColor="#C4BFB8"
-              style={[styles.input, passwordFocused && styles.inputFocused]}
-            />
-
-            <Text style={styles.fieldLabel}>CONFIRM PASSWORD</Text>
-            <TextInput
-              secureTextEntry
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              onFocus={() => setConfirmFocused(true)}
-              onBlur={() => setConfirmFocused(false)}
-              placeholder="Re-enter password"
-              placeholderTextColor="#C4BFB8"
-              style={[
-                styles.input,
-                confirmFocused && styles.inputFocused,
-                passwordsMatch && styles.inputValid,
-                passwordsMismatch && styles.inputInvalid,
-              ]}
-            />
-            {passwordsMismatch && (
-              <Text style={styles.errorText}>Passwords do not match</Text>
-            )}
-            {passwordsMatch && (
-              <Text style={styles.successText}>Passwords match ✓</Text>
-            )}
-
-            <TouchableOpacity
-              style={[styles.signupBtn, loading && styles.signupBtnDisabled]}
-              onPress={signup}
-              activeOpacity={0.85}
-              disabled={loading}
-            >
-              <Text style={styles.signupBtnText}>
-                {loading ? "Creating account…" : "Create account"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Footer */}
-          <View style={styles.footerRow}>
-            <Text style={styles.footerText}>Already have an account? </Text>
-            <Link href="/login" style={styles.footerLink}>
-              Sign in
-            </Link>
-          </View>
-
-          <Text style={styles.copyright}>TAA • {new Date().getFullYear()}</Text>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </TouchableWithoutFeedback>
   );
 }
 

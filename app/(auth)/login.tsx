@@ -8,6 +8,8 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from "react-native";
 import { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
@@ -39,75 +41,79 @@ export default function Login() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F7F5F2" />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <View style={styles.container}>
-          {/* Top branding */}
-          <View style={styles.brandBlock}>
-            <View style={styles.logoBox}>
-              <Text style={styles.logoText}>TAA</Text>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <SafeAreaView style={styles.safe}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F7F5F2" />
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={styles.container}>
+            {/* Top branding */}
+            <View style={styles.brandBlock}>
+              <View style={styles.logoBox}>
+                <Text style={styles.logoText}>TAA</Text>
+              </View>
+              <Text style={styles.title}>Welcome back</Text>
+              <Text style={styles.subtitle}>Sign in to continue</Text>
             </View>
-            <Text style={styles.title}>Welcome back</Text>
-            <Text style={styles.subtitle}>Sign in to continue</Text>
+
+            {/* Form card */}
+            <View style={styles.card}>
+              <View style={styles.cardAccent} />
+
+              <Text style={styles.fieldLabel}>EMAIL</Text>
+              <TextInput
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={email}
+                onChangeText={setEmail}
+                onFocus={() => setEmailFocused(true)}
+                onBlur={() => setEmailFocused(false)}
+                placeholder="you@example.com"
+                placeholderTextColor="#C4BFB8"
+                style={[styles.input, emailFocused && styles.inputFocused]}
+              />
+
+              <Text style={styles.fieldLabel}>PASSWORD</Text>
+              <TextInput
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+                onFocus={() => setPasswordFocused(true)}
+                onBlur={() => setPasswordFocused(false)}
+                placeholder="••••••••"
+                placeholderTextColor="#C4BFB8"
+                style={[styles.input, passwordFocused && styles.inputFocused]}
+              />
+
+              <TouchableOpacity
+                style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
+                onPress={login}
+                activeOpacity={0.85}
+                disabled={loading}
+              >
+                <Text style={styles.loginBtnText}>
+                  {loading ? "Signing in…" : "Sign in"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Footer link */}
+            <View style={styles.footerRow}>
+              <Text style={styles.footerText}>Don't have an account? </Text>
+              <Link href="/signup" style={styles.footerLink}>
+                Sign up
+              </Link>
+            </View>
+
+            <Text style={styles.copyright}>
+              TAA • {new Date().getFullYear()}
+            </Text>
           </View>
-
-          {/* Form card */}
-          <View style={styles.card}>
-            <View style={styles.cardAccent} />
-
-            <Text style={styles.fieldLabel}>EMAIL</Text>
-            <TextInput
-              autoCapitalize="none"
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
-              onFocus={() => setEmailFocused(true)}
-              onBlur={() => setEmailFocused(false)}
-              placeholder="you@example.com"
-              placeholderTextColor="#C4BFB8"
-              style={[styles.input, emailFocused && styles.inputFocused]}
-            />
-
-            <Text style={styles.fieldLabel}>PASSWORD</Text>
-            <TextInput
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-              onFocus={() => setPasswordFocused(true)}
-              onBlur={() => setPasswordFocused(false)}
-              placeholder="••••••••"
-              placeholderTextColor="#C4BFB8"
-              style={[styles.input, passwordFocused && styles.inputFocused]}
-            />
-
-            <TouchableOpacity
-              style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
-              onPress={login}
-              activeOpacity={0.85}
-              disabled={loading}
-            >
-              <Text style={styles.loginBtnText}>
-                {loading ? "Signing in…" : "Sign in"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Footer link */}
-          <View style={styles.footerRow}>
-            <Text style={styles.footerText}>Don't have an account? </Text>
-            <Link href="/signup" style={styles.footerLink}>
-              Sign up
-            </Link>
-          </View>
-
-          <Text style={styles.copyright}>TAA • {new Date().getFullYear()}</Text>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </TouchableWithoutFeedback>
   );
 }
 
