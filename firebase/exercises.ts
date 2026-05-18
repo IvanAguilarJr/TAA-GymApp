@@ -11,25 +11,26 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "@/firebase/config";
-import { Exercise, WeightEntry, Day } from "@/firebase/types";
+import { Exercise, WeightEntry, SetEntry, Day } from "@/firebase/types";
 
-// All data lives under: users/{userId}/exercises/{exerciseId}
-
+// Helper — returns the exercises collection path for a given user
 const exercisesRef = (userId: string) =>
   collection(db, "users", userId, "exercises");
 
-// READ
+// ─── READ ────────────────────────────────────────────────────────────────────
 
+/**
+ * Fetch all exercises for a user, sorted by order within each day.
+ */
 export const getExercises = async (userId: string): Promise<Exercise[]> => {
   const q = query(exercisesRef(userId), orderBy("createdAt", "asc"));
   const snapshot = await getDocs(q);
   const exercises = snapshot.docs.map((doc) => ({
     id: doc.id,
     order: 0,
+    history: [],
     ...doc.data(),
   })) as Exercise[];
-
-  // Sort by order within each day group
 
   return exercises.sort((a, b) => {
     if (a.day === b.day) return (a.order ?? 0) - (b.order ?? 0);
@@ -37,6 +38,9 @@ export const getExercises = async (userId: string): Promise<Exercise[]> => {
   });
 };
 
+/**
+ * Fetch a single exercise by its document ID.
+ */
 export const getExerciseById = async (
   userId: string,
   exerciseId: string,
@@ -44,9 +48,17 @@ export const getExerciseById = async (
   const ref = doc(db, "users", userId, "exercises", exerciseId);
   const snapshot = await getDoc(ref);
   if (!snapshot.exists()) return null;
-  return { id: snapshot.id, ...snapshot.data() } as Exercise;
+  return {
+    id: snapshot.id,
+    order: 0,
+    history: [],
+    ...snapshot.data(),
+  } as Exercise;
 };
 
+/**
+ * Fetch all exercises for a specific day, sorted by order.
+ */
 export const getExercisesByDay = async (
   userId: string,
   day: Day,
@@ -55,8 +67,11 @@ export const getExercisesByDay = async (
   return all.filter((e) => e.day === day);
 };
 
-// CREATE
+// ─── CREATE ──────────────────────────────────────────────────────────────────
 
+/**
+ * Add a new exercise. Automatically assigns order within its day group.
+ */
 export const addExercise = async (
   userId: string,
   name: string,
@@ -80,8 +95,11 @@ export const addExercise = async (
   return docRef.id;
 };
 
-// UPDATE
+// ─── UPDATE ──────────────────────────────────────────────────────────────────
 
+/**
+ * Update name, sets, reps, or day of an existing exercise.
+ */
 export const updateExercise = async (
   userId: string,
   exerciseId: string,
@@ -91,6 +109,10 @@ export const updateExercise = async (
   await updateDoc(ref, updates);
 };
 
+/**
+ * Update only the day of an exercise.
+ * Puts it at the end of the new day group.
+ */
 export const updateExerciseDay = async (
   userId: string,
   exerciseId: string,
@@ -102,63 +124,30 @@ export const updateExerciseDay = async (
   await updateDoc(ref, { day, order });
 };
 
+/**
+ * Batch update the order of multiple exercises after drag-and-drop.
+ */
 export const updateExercisesOrder = async (
   userId: string,
   reorderedExercises: Exercise[],
 ): Promise<void> => {
   const batch = writeBatch(db);
-
   reorderedExercises.forEach((exercise, index) => {
     const ref = doc(db, "users", userId, "exercises", exercise.id);
     batch.update(ref, { order: index });
   });
-
   await batch.commit();
 };
 
-// Log a new weight entry for an exercise. And automatically updates maxWeight if the new weight is a personal record.
-
-export const logWeight = async (
-  userId: string,
-  exercise: Exercise,
-  weight: number,
-): Promise<void> => {
-  const ref = doc(db, "users", userId, "exercises", exercise.id);
-
-  const newEntry: WeightEntry = {
-    date: new Date().toISOString(),
-    weight,
-  };
-
-  const updatedHistory = [...exercise.history, newEntry];
-  const newMax = weight > exercise.maxWeight ? weight : exercise.maxWeight;
-
-  await updateDoc(ref, {
-    history: updatedHistory,
-    maxWeight: newMax,
-  });
-};
-
-// DELTE
-
-export const deleteExercise = async (
-  userId: string,
-  exerciseId: string,
-): Promise<void> => {
-  const ref = doc(db, "users", userId, "exercises", exerciseId);
-  await deleteDoc(ref);
-};
-
-// Assigns initial order values to exercises that don't have one yet.
-// Only writes to Firestore if needed.
-
+/**
+ * Assigns initial order values to exercises that don't have one yet.
+ */
 export const initializeExerciseOrder = async (
   userId: string,
 ): Promise<void> => {
   const q = query(exercisesRef(userId), orderBy("createdAt", "asc"));
   const snapshot = await getDocs(q);
 
-  // Group by day
   const byDay: Record<string, { id: string; hasOrder: boolean }[]> = {};
   snapshot.docs.forEach((doc) => {
     const data = doc.data();
@@ -183,20 +172,32 @@ export const initializeExerciseOrder = async (
   if (needsWrite) await batch.commit();
 };
 
-// Edit a specific weight entry in an exercise's history.
-export const updateHistoryEntry = async (
+// ─── SESSION LOGGING ─────────────────────────────────────────────────────────
+
+/**
+ * Log a new session with per-set weight and reps.
+ * Automatically updates maxWeight if any set beats the current record.
+ *
+ * @param userId  - current user
+ * @param exercise - the exercise being logged
+ * @param sets    - array of { setNumber, weight, reps } for each set
+ */
+export const logSession = async (
   userId: string,
   exercise: Exercise,
-  entryIndex: number,
-  newWeight: number,
+  sets: SetEntry[],
 ): Promise<void> => {
   const ref = doc(db, "users", userId, "exercises", exercise.id);
 
-  const updatedHistory = exercise.history.map((entry, i) =>
-    i === entryIndex ? { ...entry, weight: newWeight } : entry,
-  );
+  const newEntry: WeightEntry = {
+    date: new Date().toISOString(),
+    sets,
+  };
 
-  const newMax = Math.max(...updatedHistory.map((e) => e.weight), 0);
+  const updatedHistory = [...exercise.history, newEntry];
+
+  // maxWeight = highest weight across all sets in all sessions
+  const newMax = Math.max(exercise.maxWeight, ...sets.map((s) => s.weight));
 
   await updateDoc(ref, {
     history: updatedHistory,
@@ -204,22 +205,69 @@ export const updateHistoryEntry = async (
   });
 };
 
-// Delete a specific weight entry from an exercise's history.
+// ─── HISTORY EDITING ─────────────────────────────────────────────────────────
+
+/**
+ * Edit a specific session entry — replaces its sets array.
+ * Recalculates maxWeight across all remaining sessions.
+ *
+ * @param entryIndex - index in the ORIGINAL (non-reversed) history array
+ * @param newSets    - the corrected sets for this session
+ */
+export const updateHistoryEntry = async (
+  userId: string,
+  exercise: Exercise,
+  entryIndex: number,
+  newSets: SetEntry[],
+): Promise<void> => {
+  const ref = doc(db, "users", userId, "exercises", exercise.id);
+
+  const updatedHistory = exercise.history.map((entry, i) =>
+    i === entryIndex ? { ...entry, sets: newSets } : entry,
+  );
+
+  const newMax = Math.max(
+    0,
+    ...updatedHistory.flatMap((e) => e.sets.map((s) => s.weight)),
+  );
+
+  await updateDoc(ref, {
+    history: updatedHistory,
+    maxWeight: newMax,
+  });
+};
+
+/**
+ * Delete a specific session entry.
+ * Recalculates maxWeight after deletion.
+ *
+ * @param entryIndex - index in the ORIGINAL (non-reversed) history array
+ */
 export const deleteHistoryEntry = async (
   userId: string,
   exercise: Exercise,
-  entryIndex: number, // index in the ORIGINAL (non-reversed) history array.
+  entryIndex: number,
 ): Promise<void> => {
   const ref = doc(db, "users", userId, "exercises", exercise.id);
 
   const updatedHistory = exercise.history.filter((_, i) => i !== entryIndex);
+
   const newMax =
     updatedHistory.length > 0
-      ? Math.max(...updatedHistory.map((e) => e.weight))
+      ? Math.max(...updatedHistory.flatMap((e) => e.sets.map((s) => s.weight)))
       : 0;
 
   await updateDoc(ref, {
     history: updatedHistory,
     maxWeight: newMax,
   });
+};
+
+// DELETE
+export const deleteExercise = async (
+  userId: string,
+  exerciseId: string,
+): Promise<void> => {
+  const ref = doc(db, "users", userId, "exercises", exerciseId);
+  await deleteDoc(ref);
 };

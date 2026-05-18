@@ -30,9 +30,17 @@ export const DAY_MAP: Record<number, Day> = {
   6: "Sat",
 };
 
+// A single set within a session
+export type SetEntry = {
+  setNumber: number; // 1-indexed
+  weight: number;
+  reps: number;
+};
+
+// A full session log - contains one SetEntry per set
 export type WeightEntry = {
   date: string; // ISO string e.g. "2026-04-22"
-  weight: number;
+  sets: SetEntry[]; // one per set logged
 };
 
 export type Exercise = {
