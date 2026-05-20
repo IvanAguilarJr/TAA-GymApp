@@ -24,6 +24,8 @@ import {
   deleteHistoryEntry,
 } from "@/firebase/exercises";
 import { Exercise, Day, ALL_DAYS, SetEntry } from "@/firebase/types";
+import { LineChart } from "react-native-chart-kit";
+import { Dimensions } from "react-native";
 
 const DAY_LABELS: Record<Day, string> = {
   Mon: "Monday",
@@ -338,6 +340,18 @@ export default function ExerciseDetail() {
 
   const lastSession = sortedHistory[0];
 
+  const progressData = exercise.history
+    .slice()
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .map((entry, index) => ({
+      x: index + 1,
+      y: Math.max(...entry.sets.map((s) => s.weight)),
+      label: new Date(entry.date).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+    }));
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#F7F5F2" />
@@ -439,6 +453,54 @@ export default function ExerciseDetail() {
             <Text style={styles.statLabel}>Last</Text>
           </View>
         </View>
+
+        {progressData.length > 1 && (
+          <View style={styles.chartCard}>
+            <View style={styles.chartHeader}>
+              <Text style={styles.chartTitle}>Progress</Text>
+              <Text style={styles.chartRange}>
+                {new Date(exercise.history[0].date).toLocaleDateString(
+                  "en-US",
+                  {
+                    month: "long",
+                    year: "numeric",
+                  },
+                )}
+              </Text>
+            </View>
+            <LineChart
+              data={{
+                labels: progressData.map((_, i) => `${i + 1}`),
+                datasets: [{ data: progressData.map((p) => p.y) }],
+              }}
+              width={Dimensions.get("window").width - 80}
+              height={200}
+              yAxisSuffix=" kg"
+              chartConfig={{
+                backgroundColor: "#FFFFFF",
+                backgroundGradientFrom: "#FFFFFF",
+                backgroundGradientTo: "#FFFFFF",
+                decimalPlaces: 0,
+                color: () => "#1A1714",
+                labelColor: () => "#9E9890",
+                style: { borderRadius: 12 },
+                propsForDots: {
+                  r: "5",
+                  strokeWidth: "2",
+                  stroke: "#F7F5F2",
+                },
+                propsForBackgroundLines: {
+                  stroke: "#ECE8E3",
+                  strokeDasharray: "4",
+                },
+              }}
+              bezier
+              style={{ borderRadius: 12, marginTop: 8 }}
+              fromZero={false}
+            />
+            <Text style={styles.chartXLabel}>Sessions</Text>
+          </View>
+        )}
 
         {/* Log button */}
         <TouchableOpacity
@@ -1243,4 +1305,49 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: "#9E9890", fontSize: 15, fontWeight: "600" },
   backLink: { fontSize: 15, color: "#1A1714", fontWeight: "600" },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: "#1A1714" },
+
+  chartCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 24,
+    shadowColor: "#1A1714",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  chartHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  chartTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#1A1714",
+  },
+  chartRange: {
+    fontSize: 12,
+    color: "#C4BFB8",
+    fontWeight: "500",
+  },
+  chartYLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#9E9890",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  chartXLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#9E9890",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    textAlign: "center",
+    marginTop: 4,
+  },
 });
