@@ -630,11 +630,7 @@ export default function ExerciseDetail() {
             activeOpacity={1}
             onPress={() => setLogModalVisible(false)}
           />
-          <ScrollView
-            style={styles.modalScrollWrapper}
-            contentContainerStyle={styles.modalSheet}
-            keyboardShouldPersistTaps="handled"
-          >
+          <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Log Session</Text>
             <Text style={styles.modalSub}>
@@ -706,10 +702,9 @@ export default function ExerciseDetail() {
             >
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
-
       {/* ── Edit Exercise Modal ── */}
       <Modal
         visible={editModalVisible}
@@ -726,11 +721,7 @@ export default function ExerciseDetail() {
             activeOpacity={1}
             onPress={() => setEditModalVisible(false)}
           />
-          <ScrollView
-            style={styles.modalScrollWrapper}
-            contentContainerStyle={styles.modalSheet}
-            keyboardShouldPersistTaps="handled"
-          >
+          <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Edit Exercise</Text>
 
@@ -775,28 +766,33 @@ export default function ExerciseDetail() {
             </View>
 
             <Text style={styles.fieldLabel}>WORKOUT DAY</Text>
-            <View style={styles.dayGrid}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.dayScroll}
+              contentContainerStyle={styles.dayScrollContent}
+            >
               {ALL_DAYS.map((day) => (
                 <TouchableOpacity
                   key={day}
                   style={[
-                    styles.dayGridItem,
-                    editDay === day && styles.dayGridItemSelected,
+                    styles.dayChip,
+                    editDay === day && styles.dayChipSelected,
                   ]}
                   onPress={() => setEditDay(day)}
                   activeOpacity={0.7}
                 >
                   <Text
                     style={[
-                      styles.dayGridText,
-                      editDay === day && styles.dayGridTextSelected,
+                      styles.dayChipText,
+                      editDay === day && styles.dayChipTextSelected,
                     ]}
                   >
-                    {DAY_LABELS[day]}
+                    {day}
                   </Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
 
             <TouchableOpacity
               style={[styles.confirmBtn, saving && styles.confirmBtnDisabled]}
@@ -816,7 +812,7 @@ export default function ExerciseDetail() {
             >
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -1159,19 +1155,36 @@ const styles = StyleSheet.create({
   emptyHistorySubtext: { fontSize: 13, color: "#9E9890", textAlign: "center" },
 
   // Modal shared
-  modalOverlay: { flex: 1, justifyContent: "flex-end" },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(26,23,20,0.4)",
   },
-  modalScrollWrapper: { maxHeight: "90%" },
+  // modalScrollWrapper: {
+  //   maxHeight: "90%",
+  //   flexGrow: 0,
+  //   alignSelf: "flex-end",
+  //   width: "100%",
+  // },
   modalSheet: {
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 24,
     paddingBottom: 48,
+    maxHeight: "80%",
   },
+  // editModalSheet: {
+  //   backgroundColor: "#FFFFFF",
+  //   borderTopLeftRadius: 28,
+  //   borderTopRightRadius: 28,
+  //   padding: 24,
+  //   paddingBottom: 48,
+  //   maxHeight: "90%",
+  // },
   modalHandle: {
     width: 40,
     height: 4,
@@ -1270,21 +1283,21 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row" },
 
   // Day grid
-  dayGrid: { gap: 8, marginTop: 4 },
-  dayGridItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#F7F5F2",
-    borderRadius: 12,
-    paddingHorizontal: 18,
-    paddingVertical: 13,
-    borderWidth: 1.5,
-    borderColor: "transparent",
-  },
-  dayGridItemSelected: { backgroundColor: "#1A1714", borderColor: "#1A1714" },
-  dayGridText: { fontSize: 15, fontWeight: "600", color: "#1A1714" },
-  dayGridTextSelected: { color: "#F7F5F2" },
+  // dayGrid: { gap: 8, marginTop: 4 },
+  // dayGridItem: {
+  //   flexDirection: "row",
+  //   justifyContent: "space-between",
+  //   alignItems: "center",
+  //   backgroundColor: "#F7F5F2",
+  //   borderRadius: 12,
+  //   paddingHorizontal: 18,
+  //   paddingVertical: 13,
+  //   borderWidth: 1.5,
+  //   borderColor: "transparent",
+  // },
+  // dayGridItemSelected: { backgroundColor: "#1A1714", borderColor: "#1A1714" },
+  // dayGridText: { fontSize: 15, fontWeight: "600", color: "#1A1714" },
+  // dayGridTextSelected: { color: "#F7F5F2" },
 
   // Buttons
   confirmBtn: {
@@ -1333,14 +1346,14 @@ const styles = StyleSheet.create({
     color: "#C4BFB8",
     fontWeight: "500",
   },
-  chartYLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#9E9890",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: 4,
-  },
+  // chartYLabel: {
+  //   fontSize: 10,
+  //   fontWeight: "600",
+  //   color: "#9E9890",
+  //   textTransform: "uppercase",
+  //   letterSpacing: 0.8,
+  //   marginBottom: 4,
+  // },
   chartXLabel: {
     fontSize: 10,
     fontWeight: "600",
@@ -1350,4 +1363,17 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
   },
+  dayScroll: { marginTop: 4 },
+  dayScrollContent: { gap: 8, paddingVertical: 4 },
+  dayChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "#F7F5F2",
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+  dayChipSelected: { backgroundColor: "#1A1714", borderColor: "#1A1714" },
+  dayChipText: { fontSize: 14, fontWeight: "600", color: "#9E9890" },
+  dayChipTextSelected: { color: "#F7F5F2" },
 });
