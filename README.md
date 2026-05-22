@@ -1,50 +1,136 @@
-# Welcome to your Expo app 👋
+# TAA — Training Activity App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A personal gym tracking app built with React Native and Expo. Log your workouts, track your progress, and beat your personal records.
 
-## Get started
+## Features
 
-1. Install dependencies
+- **Today's Workout** — Opens to your scheduled exercises for the current day
+- **Per-Set Tracking** — Log individual weight and reps for each set
+- **Personal Records** — Automatically tracks your best lift per exercise
+- **Progress Chart** — Visual weight progression across sessions
+- **Weekly Schedule** — Assign exercises to specific days of the week
+- **Drag to Reorder** — Long press to reorder exercises within a day
+- **Move Day** — Swipe left on any exercise to move it to a different day
+- **Session History** — Full log of every session with per-set breakdown
+- **Edit & Delete** — Long press any history entry to correct or remove it
+- **Rest Day Detection** — Shows a motivational message when no exercises are scheduled
+- **Summary Tab** — Overview of total sessions, PRs, and weekly schedule
 
-   ```bash
-   npm install
-   ```
+## Tech Stack
 
-2. Start the app
+- **Framework** — React Native + Expo Router
+- **Language** — TypeScript
+- **Auth** — Firebase Authentication
+- **Database** — Cloud Firestore
+- **Animations** — React Native Reanimated
+- **Gestures** — React Native Gesture Handler
+- **Drag & Drop** — React Native Draggable FlatList
+- **Charts** — React Native Chart Kit
 
-   ```bash
-   npx expo start
-   ```
+## Project Structure
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+app/
+├── (auth)/
+│   ├── login.tsx
+│   └── signup.tsx
+├── (tabs)/
+│   ├── home.tsx          # Today's workout
+│   ├── exercises.tsx     # All exercises grouped by day
+│   └── summary.tsx       # Stats and PR overview
+├── exercise/
+│   └── [id].tsx          # Exercise detail, logging, history
+├── _layout.tsx
+└── index.tsx
+firebase/
+├── config.ts
+├── types.ts
+└── exercises.ts
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Getting Started
 
-## Learn more
+### Prerequisites
 
-To learn more about developing your project with Expo, look at the following resources:
+- Node.js >= 20.19.4
+- Expo CLI
+- A Firebase project with Authentication and Firestore enabled
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### Installation
 
-## Join the community
+```bash
+git clone https://github.com/IvanAguilarJr/TAA-GymApp.git
+cd TAA-GymApp
+npm install
+```
 
-Join our community of developers creating universal apps.
+### Environment Variables
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Create a `.env` file in the root of the project:
+
+```
+EXPO_PUBLIC_FIREBASE_API_KEY=your_api_key
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_auth_domain
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_storage_bucket
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
+EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
+EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=your_measurement_id
+```
+
+### Firestore Security Rules
+
+In your Firebase Console → Firestore → Rules, paste:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+```
+
+### Running the App
+
+```bash
+npx expo start --clear
+```
+
+Press `i` for iOS simulator or scan the QR code with Expo Go on your phone.
+
+For a native build (required after adding new native packages):
+
+```bash
+npx expo run:ios
+```
+
+## Data Model
+
+```
+users/
+└── {userId}/
+    └── exercises/
+        └── {exerciseId}/
+            ├── name: string
+            ├── sets: number
+            ├── reps: number
+            ├── day: "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun" | "None"
+            ├── order: number
+            ├── maxWeight: number
+            ├── createdAt: string (ISO)
+            └── history: [
+                  {
+                    date: string (ISO),
+                    sets: [
+                      { setNumber: number, weight: number, reps: number }
+                    ]
+                  }
+                ]
+```
+
+## License
+
+MIT
