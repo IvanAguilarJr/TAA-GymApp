@@ -13,6 +13,11 @@ import {
 import { db } from "@/firebase/config";
 import { Exercise, WeightEntry, SetEntry, Day } from "@/firebase/types";
 
+// VALIDATION LIMITS
+export const MAX_SETS = 4;
+export const MAX_WEIGHT_KG = 1000;
+export const MAX_REPS = 100;
+
 // Helper — returns the exercises collection path for a given user
 const exercisesRef = (userId: string) =>
   collection(db, "users", userId, "exercises");
@@ -82,10 +87,13 @@ export const addExercise = async (
   const existing = await getExercisesByDay(userId, day);
   const order = existing.length;
 
+  const clampedSets = Math.min(sets, MAX_SETS);
+  const clampedReps = Math.min(reps, MAX_REPS);
+
   const docRef = await addDoc(exercisesRef(userId), {
     name,
-    sets,
-    reps,
+    sets: clampedSets,
+    reps: clampedReps,
     day,
     order,
     maxWeight: 0,
@@ -105,6 +113,11 @@ export const updateExercise = async (
   exerciseId: string,
   updates: Partial<Pick<Exercise, "name" | "sets" | "reps" | "day">>,
 ): Promise<void> => {
+  if (updates.sets !== undefined)
+    updates.sets = Math.min(updates.sets, MAX_SETS);
+  if (updates.reps !== undefined)
+    updates.reps = Math.min(updates.reps, MAX_REPS);
+
   const ref = doc(db, "users", userId, "exercises", exerciseId);
   await updateDoc(ref, updates);
 };
@@ -189,15 +202,21 @@ export const logSession = async (
 ): Promise<void> => {
   const ref = doc(db, "users", userId, "exercises", exercise.id);
 
+  const safeSets = sets.slice(0, MAX_SETS).map((s) => ({
+    ...s,
+    weight: Math.min(s.weight, MAX_WEIGHT_KG),
+    reps: Math.min(s.reps, MAX_REPS),
+  }));
+
   const newEntry: WeightEntry = {
     date: new Date().toISOString(),
-    sets,
+    sets: safeSets,
   };
 
   const updatedHistory = [...exercise.history, newEntry];
 
   // maxWeight = highest weight across all sets in all sessions
-  const newMax = Math.max(exercise.maxWeight, ...sets.map((s) => s.weight));
+  const newMax = Math.max(exercise.maxWeight, ...safeSets.map((s) => s.weight));
 
   await updateDoc(ref, {
     history: updatedHistory,

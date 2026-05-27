@@ -3,6 +3,10 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/firebase/config";
 import { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { configureGoogleSignIn } from "@/firebase/googleAuth";
+
+// Configure Google Sign-In once when app starts
+configureGoogleSignIn();
 
 export default function RootLayout() {
   const [user, setUser] = useState<any>(null);

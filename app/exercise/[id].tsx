@@ -22,6 +22,9 @@ import {
   updateExercise,
   updateHistoryEntry,
   deleteHistoryEntry,
+  MAX_REPS,
+  MAX_SETS,
+  MAX_WEIGHT_KG,
 } from "@/firebase/exercises";
 import { Exercise, Day, ALL_DAYS, SetEntry } from "@/firebase/types";
 import { LineChart } from "react-native-chart-kit";
@@ -126,8 +129,19 @@ export default function ExerciseDetail() {
         );
         return;
       }
+
+      if (w > MAX_WEIGHT_KG) {
+        Alert.alert("Too heavy", `Max weight is ${MAX_WEIGHT_KG} kg.`);
+        return;
+      }
+
       if (isNaN(r) || r <= 0) {
         Alert.alert("Missing reps", `Please enter reps for Set ${i + 1}.`);
+        return;
+      }
+
+      if (r > MAX_REPS) {
+        Alert.alert("Too many reps", `Max reps per set is ${MAX_REPS}.`);
         return;
       }
     }
@@ -182,6 +196,14 @@ export default function ExerciseDetail() {
     const repsNum = parseInt(editReps);
     if (isNaN(setsNum) || isNaN(repsNum) || setsNum <= 0 || repsNum <= 0) {
       Alert.alert("Invalid values", "Sets and reps must be positive numbers.");
+      return;
+    }
+    if (setsNum > MAX_SETS) {
+      Alert.alert("Too many sets", `Max sets is ${MAX_SETS}.`);
+      return;
+    }
+    if (repsNum > MAX_REPS) {
+      Alert.alert("Too many reps", `Max reps is ${MAX_REPS}.`);
       return;
     }
     setSaving(true);
@@ -250,8 +272,22 @@ export default function ExerciseDetail() {
         Alert.alert("Invalid weight", `Check weight for Set ${i + 1}.`);
         return;
       }
+      if (w > MAX_WEIGHT_KG) {
+        Alert.alert(
+          "Too heavy",
+          `Max weight is ${MAX_WEIGHT_KG} kg for Set ${i + 1}.`,
+        );
+        return;
+      }
       if (isNaN(r) || r <= 0) {
         Alert.alert("Invalid reps", `Check reps for Set ${i + 1}.`);
+        return;
+      }
+      if (r > MAX_REPS) {
+        Alert.alert(
+          "Too many reps",
+          `Max reps is ${MAX_REPS} for Set ${i + 1}.`,
+        );
         return;
       }
     }

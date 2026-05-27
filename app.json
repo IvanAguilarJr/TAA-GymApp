@@ -9,7 +9,9 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ivanjr.TAA",
+      "googleServicesFile": "./ios/TAA/GoogleService-Info.plist"
     },
     "android": {
       "adaptiveIcon": {
@@ -37,6 +39,12 @@
           "dark": {
             "backgroundColor": "#000000"
           }
+        }
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.778760395898-u4nm3pf3ujfbrldccp61q11php2vrp28"
         }
       ]
     ],

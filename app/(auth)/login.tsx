@@ -10,16 +10,20 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
+  ActivityIndicator,
 } from "react-native";
 import { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/firebase/config";
 import { Link, useRouter } from "expo-router";
+import { signInWithGoogle } from "@/firebase/googleAuth";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const router = useRouter();
@@ -39,6 +43,22 @@ export default function Login() {
       setLoading(false);
     }
   };
+
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    try {
+      await signInWithGoogle();
+      router.replace("/(tabs)/home");
+    } catch (err: any) {
+      if (err.message !== "Sign in cancelled") {
+        alert(err.message);
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  //TODO: Add handleAppleSignIn Function
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -96,6 +116,49 @@ export default function Login() {
                 <Text style={styles.loginBtnText}>
                   {loading ? "Signing in…" : "Sign in"}
                 </Text>
+              </TouchableOpacity>
+
+              {/* Divider */}
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}> or </Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* Google Sign-In button */}
+              <TouchableOpacity
+                style={[styles.googleBtn, googleLoading && styles.btnDisabled]}
+                onPress={handleGoogleSignIn}
+                activeOpacity={0.85}
+                disabled={loading || googleLoading}
+              >
+                {googleLoading ? (
+                  <ActivityIndicator size="small" color="#1A1714" />
+                ) : (
+                  <>
+                    <Text style={styles.googleIcon}>G</Text>
+                    <Text style={styles.googleBtnText}>
+                      Continue with Google
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {/* Apple Sign-In button */}
+              <TouchableOpacity
+                style={[styles.appleBtn, appleLoading && styles.btnDisabled]}
+                onPress={() => {}}
+                disabled={appleLoading}
+                activeOpacity={0.85}
+              >
+                {appleLoading ? (
+                  <ActivityIndicator size="small" color="#1A1714" />
+                ) : (
+                  <>
+                    <Text style={styles.appleIcon}>{"🍎"}</Text>
+                    <Text style={styles.appleBtnText}>Continue with Apple</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
 
@@ -235,6 +298,68 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.3,
+  },
+
+  // Divider
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 16,
+    gap: 12,
+  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "#EEEBE6" },
+  dividerText: { fontSize: 13, color: "#9E9890", fontWeight: "500" },
+
+  // Google Button
+  googleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F7F5F2",
+    borderRadius: 14,
+    paddingVertical: 14,
+    gap: 10,
+    borderWidth: 1.5,
+    borderColor: "#EEEBE6",
+  },
+  googleIcon: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1A1714",
+  },
+  googleBtnText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1A1714",
+  },
+
+  appleBtn: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F7F5F2",
+    borderRadius: 14,
+    paddingVertical: 14,
+    gap: 10,
+    borderWidth: 1.5,
+    borderColor: "#EEEBE6",
+  },
+
+  appleBtnText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1A1714",
+  },
+
+  appleIcon: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1A1714",
+  },
+
+  btnDisabled: {
+    opacity: 0.5,
   },
 
   // Footer
