@@ -5,6 +5,9 @@ import {
 
 import { GoogleAuthProvider, signInWithCredential } from "firebase/auth";
 import { auth } from "@/firebase/config";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/firebase/config";
+import { createUserProfile } from "@/firebase/profile";
 
 // Configure Google Sign-In - call this once when app starts
 export const configureGoogleSignIn = () => {
@@ -29,7 +32,17 @@ export const signInWithGoogle = async () => {
 
     // Sign in to Firebase with google credential
     const result = await signInWithCredential(auth, googleCredential);
-    return result.user;
+    const user = result.user;
+
+    // Bootstrap profile on first Google login
+    const profileRef = doc(db, "users", user.uid, "profile", "settings");
+    const profileSnap = await getDoc(profileRef);
+
+    if (!profileSnap.exists()) {
+      await createUserProfile(user.uid, user.displayName ?? "");
+    }
+
+    return user;
   } catch (error: any) {
     if (error.code === statusCodes.SIGN_IN_CANCELLED) {
       throw new Error("Sign in cancelled");
