@@ -14,6 +14,7 @@ import {
 import { useState } from "react";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/firebase/config";
+import { createUserProfile } from "@/firebase/profile";
 import { Link, useRouter } from "expo-router";
 
 export default function Signup() {
@@ -41,7 +42,13 @@ export default function Signup() {
     }
     setLoading(true);
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
+      const { user } = await createUserWithEmailAndPassword(
+        auth,
+        email,
+        password,
+      );
+      // Create profile using email prefix as the default display name
+      await createUserProfile(user.uid, email.split("@")[0]);
       router.replace("/(tabs)/home");
     } catch (err: any) {
       alert(err.message);

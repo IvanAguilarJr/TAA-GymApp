@@ -13,6 +13,7 @@ import {
 import { router, useFocusEffect } from "expo-router";
 import { useState, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useWeightUnit } from "../context/WeightUnitContext";
 
 const DAY_LABELS: Record<Day, string> = {
   Mon: "Monday",
@@ -29,6 +30,7 @@ export default function Summary() {
   const user = auth.currentUser;
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
+  const { format } = useWeightUnit();
 
   const fetchExercises = async () => {
     setLoading(true);
@@ -109,7 +111,7 @@ export default function Summary() {
               </View>
               <View style={[styles.statCard, styles.statCardLarge]}>
                 <Text style={styles.statCardValue}>
-                  {heaviestLift > 0 ? `${heaviestLift}kg` : "—"}
+                  {heaviestLift > 0 ? format(heaviestLift) : "—"}
                 </Text>
                 <Text style={styles.statCardLabel}>Heaviest Lift</Text>
               </View>
@@ -157,7 +159,7 @@ export default function Summary() {
                     </View>
                     <View style={styles.prBadge}>
                       <Text style={styles.prBadgeText}>
-                        {exercise.maxWeight} kg
+                        {format(exercise.maxWeight)}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -268,7 +270,7 @@ export default function Summary() {
                     {exercise.maxWeight > 0 && (
                       <View style={styles.prBadgeSmall}>
                         <Text style={styles.prBadgeSmallText}>
-                          🏆 {exercise.maxWeight} kg
+                          🏆 {format(exercise.maxWeight)}
                         </Text>
                       </View>
                     )}

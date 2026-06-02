@@ -29,6 +29,7 @@ import {
 import { Exercise, Day, ALL_DAYS, SetEntry } from "@/firebase/types";
 import { LineChart } from "react-native-chart-kit";
 import { Dimensions } from "react-native";
+import { useWeightUnit } from "@/app/context/WeightUnitContext";
 
 const DAY_LABELS: Record<Day, string> = {
   Mon: "Monday",
@@ -51,6 +52,9 @@ export default function ExerciseDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const userId = auth.currentUser?.uid ?? "";
+
+  // ── Weight unit ──────────────────────────────────────────────────────────
+  const { unit, toDisplay, toStorage, format } = useWeightUnit();
 
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,7 +122,6 @@ export default function ExerciseDetail() {
   };
 
   const handleLogSession = async () => {
-    // Validate all inputs
     for (let i = 0; i < setInputs.length; i++) {
       const w = parseFloat(setInputs[i].weight);
       const r = parseInt(setInputs[i].reps);
@@ -129,17 +132,18 @@ export default function ExerciseDetail() {
         );
         return;
       }
-
-      if (w > MAX_WEIGHT_KG) {
-        Alert.alert("Too heavy", `Max weight is ${MAX_WEIGHT_KG} kg.`);
+      // Validate against MAX_WEIGHT_KG after converting user input back to kg
+      if (toStorage(w) > MAX_WEIGHT_KG) {
+        Alert.alert(
+          "Too heavy",
+          `Max weight is ${toDisplay(MAX_WEIGHT_KG)} ${unit}.`,
+        );
         return;
       }
-
       if (isNaN(r) || r <= 0) {
         Alert.alert("Missing reps", `Please enter reps for Set ${i + 1}.`);
         return;
       }
-
       if (r > MAX_REPS) {
         Alert.alert("Too many reps", `Max reps per set is ${MAX_REPS}.`);
         return;
@@ -148,7 +152,7 @@ export default function ExerciseDetail() {
 
     const sets: SetEntry[] = setInputs.map((row, i) => ({
       setNumber: i + 1,
-      weight: parseFloat(row.weight),
+      weight: toStorage(parseFloat(row.weight)), // ← convert display → kg before saving
       reps: parseInt(row.reps),
     }));
 
@@ -165,16 +169,20 @@ export default function ExerciseDetail() {
     }
   };
 
-  // Check if any set input beats current PR
+  // Check if any set input beats current PR (compare in kg)
   const hasNewPR = () => {
     if (!exercise) return false;
-    return setInputs.some((row) => parseFloat(row.weight) > exercise.maxWeight);
+    return setInputs.some(
+      (row) => toStorage(parseFloat(row.weight)) > exercise.maxWeight,
+    );
   };
 
   const newPRAmount = () => {
     if (!exercise) return 0;
-    const max = Math.max(...setInputs.map((r) => parseFloat(r.weight) || 0));
-    return (max - exercise.maxWeight).toFixed(1);
+    const maxKg = Math.max(
+      ...setInputs.map((r) => toStorage(parseFloat(r.weight) || 0)),
+    );
+    return toDisplay(maxKg - exercise.maxWeight).toFixed(1);
   };
 
   // Edit exercise modal
@@ -236,7 +244,8 @@ export default function ExerciseDetail() {
             setEditEntryIndex(originalIndex);
             setEditEntryInputs(
               entry.sets.map((s) => ({
-                weight: String(s.weight),
+                // ← convert stored kg → display unit when pre-filling
+                weight: String(toDisplay(s.weight)),
                 reps: String(s.reps),
               })),
             );
@@ -272,10 +281,10 @@ export default function ExerciseDetail() {
         Alert.alert("Invalid weight", `Check weight for Set ${i + 1}.`);
         return;
       }
-      if (w > MAX_WEIGHT_KG) {
+      if (toStorage(w) > MAX_WEIGHT_KG) {
         Alert.alert(
           "Too heavy",
-          `Max weight is ${MAX_WEIGHT_KG} kg for Set ${i + 1}.`,
+          `Max weight is ${toDisplay(MAX_WEIGHT_KG)} ${unit} for Set ${i + 1}.`,
         );
         return;
       }
@@ -294,7 +303,7 @@ export default function ExerciseDetail() {
 
     const newSets: SetEntry[] = editEntryInputs.map((row, i) => ({
       setNumber: i + 1,
-      weight: parseFloat(row.weight),
+      weight: toStorage(parseFloat(row.weight)), // ← convert display → kg before saving
       reps: parseInt(row.reps),
     }));
 
@@ -381,7 +390,8 @@ export default function ExerciseDetail() {
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     .map((entry, index) => ({
       x: index + 1,
-      y: Math.max(...entry.sets.map((s) => s.weight)),
+      // ← convert stored kg → display unit for chart
+      y: toDisplay(Math.max(...entry.sets.map((s) => s.weight))),
       label: new Date(entry.date).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
@@ -443,7 +453,8 @@ export default function ExerciseDetail() {
                     </View>
                     <View style={styles.setBody}>
                       <View style={styles.setStat}>
-                        <Text style={styles.setVal}>{set.weight} kg</Text>
+                        {/* ← format() converts kg → display unit with suffix */}
+                        <Text style={styles.setVal}>{format(set.weight)}</Text>
                         <Text style={styles.setLbl}>Weight</Text>
                       </View>
                       <View style={styles.setStat}>
@@ -462,7 +473,8 @@ export default function ExerciseDetail() {
         {exercise.maxWeight > 0 && (
           <View style={styles.prBar}>
             <Text style={styles.prBarLeft}>🏆 Personal record</Text>
-            <Text style={styles.prBarRight}>{exercise.maxWeight} kg</Text>
+            {/* ← format() handles kg → display unit */}
+            <Text style={styles.prBarRight}>{format(exercise.maxWeight)}</Text>
           </View>
         )}
 
@@ -475,15 +487,17 @@ export default function ExerciseDetail() {
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <Text style={styles.statValue}>
-              {exercise.maxWeight > 0 ? `${exercise.maxWeight} kg` : "—"}
+              {/* ← format() for PR stat */}
+              {exercise.maxWeight > 0 ? format(exercise.maxWeight) : "—"}
             </Text>
             <Text style={styles.statLabel}>PR</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <Text style={styles.statValue}>
+              {/* ← format() for Last stat */}
               {lastSession
-                ? `${Math.max(...lastSession.sets.map((s) => s.weight))} kg`
+                ? format(Math.max(...lastSession.sets.map((s) => s.weight)))
                 : "—"}
             </Text>
             <Text style={styles.statLabel}>Last</Text>
@@ -511,7 +525,7 @@ export default function ExerciseDetail() {
               }}
               width={Dimensions.get("window").width - 80}
               height={200}
-              yAxisSuffix=" kg"
+              yAxisSuffix={` ${unit}`} // ← dynamic unit suffix
               chartConfig={{
                 backgroundColor: "#FFFFFF",
                 backgroundGradientFrom: "#FFFFFF",
@@ -623,13 +637,14 @@ export default function ExerciseDetail() {
                           >
                             Set {set.setNumber}
                           </Text>
+                          {/* ← format() for history set weight */}
                           <Text
                             style={[
                               styles.historySetVal,
                               isSetPR && styles.historySetValPR,
                             ]}
                           >
-                            {set.weight} kg
+                            {format(set.weight)}
                           </Text>
                           <Text
                             style={[
@@ -671,13 +686,16 @@ export default function ExerciseDetail() {
             <Text style={styles.modalTitle}>Log Session</Text>
             <Text style={styles.modalSub}>
               {exercise.name} · {exercise.sets} sets
-              {exercise.maxWeight > 0 ? ` · PR: ${exercise.maxWeight} kg` : ""}
+              {/* ← PR shown in display unit */}
+              {exercise.maxWeight > 0
+                ? ` · PR: ${format(exercise.maxWeight)}`
+                : ""}
             </Text>
 
-            {/* Input grid header */}
+            {/* Input grid header — dynamic unit label */}
             <View style={styles.inputGridHeader}>
               <View style={styles.inputSetLabelBox} />
-              <Text style={styles.inputGridHeaderText}>Weight (kg)</Text>
+              <Text style={styles.inputGridHeaderText}>Weight ({unit})</Text>
               <Text style={styles.inputGridHeaderText}>Reps</Text>
             </View>
 
@@ -693,7 +711,8 @@ export default function ExerciseDetail() {
                   onChangeText={(v) => updateSetInput(i, "weight", v)}
                   placeholder={
                     lastSession?.sets?.[i]
-                      ? String(lastSession.sets[i].weight)
+                      ? // ← placeholder from last session also converted to display unit
+                        String(toDisplay(lastSession.sets[i].weight))
                       : "0"
                   }
                   placeholderTextColor="#C4BFB8"
@@ -710,12 +729,12 @@ export default function ExerciseDetail() {
               </View>
             ))}
 
-            {/* New PR hint */}
+            {/* New PR hint — delta shown in display unit */}
             {hasNewPR() && (
               <View style={styles.prHint}>
                 <Text style={styles.prHintText}>
-                  🎉 New PR! That's {newPRAmount()} kg more than your current
-                  best!
+                  🎉 New PR! That's {newPRAmount()} {unit} more than your
+                  current best!
                 </Text>
               </View>
             )}
@@ -741,6 +760,7 @@ export default function ExerciseDetail() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
       {/* ── Edit Exercise Modal ── */}
       <Modal
         visible={editModalVisible}
@@ -877,9 +897,10 @@ export default function ExerciseDetail() {
             <Text style={styles.modalTitle}>Edit Session</Text>
             <Text style={styles.modalSub}>Correct the weights or reps</Text>
 
+            {/* Input grid header — dynamic unit label */}
             <View style={styles.inputGridHeader}>
               <View style={styles.inputSetLabelBox} />
-              <Text style={styles.inputGridHeaderText}>Weight (kg)</Text>
+              <Text style={styles.inputGridHeaderText}>Weight ({unit})</Text>
               <Text style={styles.inputGridHeaderText}>Reps</Text>
             </View>
 
@@ -943,8 +964,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-
-  // Top nav
   topNav: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -965,8 +984,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   editBtnText: { fontSize: 14, color: "#1A1714", fontWeight: "700" },
-
-  // Hero card
   heroCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
@@ -1015,8 +1032,6 @@ const styles = StyleSheet.create({
   metaPillDay: { backgroundColor: "#EEF2FF" },
   metaPillText: { fontSize: 12, fontWeight: "600", color: "#1A1714" },
   metaPillDayText: { color: "#4338CA" },
-
-  // Last session set columns inside hero card
   lastSessionBox: {
     paddingHorizontal: 16,
     paddingBottom: 20,
@@ -1062,8 +1077,6 @@ const styles = StyleSheet.create({
   },
   setVal: { fontSize: 13, fontWeight: "600", color: "#1A1714" },
   setLbl: { fontSize: 10, color: "#9E9890", marginTop: 2 },
-
-  // PR bar
   prBar: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1075,8 +1088,6 @@ const styles = StyleSheet.create({
   },
   prBarLeft: { fontSize: 13, color: "#854D0E", fontWeight: "600" },
   prBarRight: { fontSize: 15, fontWeight: "700", color: "#854D0E" },
-
-  // Stats row
   statsRow: {
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
@@ -1104,8 +1115,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   statDivider: { width: 1, backgroundColor: "#EEEBE6", marginVertical: 4 },
-
-  // Log button
   logBtn: {
     backgroundColor: "#1A1714",
     borderRadius: 14,
@@ -1119,8 +1128,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
   },
-
-  // Section
   sectionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1129,8 +1136,6 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 17, fontWeight: "700", color: "#1A1714" },
   sectionHint: { fontSize: 11, color: "#C4BFB8" },
-
-  // History cards
   historyCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -1159,8 +1164,6 @@ const styles = StyleSheet.create({
   },
   prBadgeText: { fontSize: 11, fontWeight: "700", color: "#854D0E" },
   dots: { fontSize: 20, color: "#C4BFB8", fontWeight: "700" },
-
-  // History set columns
   historySetsGrid: { flexDirection: "row", gap: 6 },
   historySetCol: {
     flex: 1,
@@ -1183,28 +1186,21 @@ const styles = StyleSheet.create({
   historySetValPR: { color: "#854D0E" },
   historySetReps: { fontSize: 11, color: "#9E9890", marginTop: 2 },
   historySetRepsPR: { color: "#854D0E" },
-
-  // Empty history
   emptyHistory: { alignItems: "center", paddingVertical: 32, gap: 6 },
   emptyHistoryIcon: { fontSize: 40, marginBottom: 4 },
   emptyHistoryText: { fontSize: 16, fontWeight: "700", color: "#1A1714" },
   emptyHistorySubtext: { fontSize: 13, color: "#9E9890", textAlign: "center" },
-
-  // Modal shared
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
+  modalOverlay: { flex: 1, justifyContent: "flex-end" },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(26,23,20,0.4)",
   },
-  // modalScrollWrapper: {
-  //   maxHeight: "90%",
-  //   flexGrow: 0,
-  //   alignSelf: "flex-end",
-  //   width: "100%",
-  // },
+  modalScrollWrapper: {
+    maxHeight: "90%",
+    flexGrow: 0,
+    alignSelf: "flex-end",
+    width: "100%",
+  },
   modalSheet: {
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 28,
@@ -1213,14 +1209,6 @@ const styles = StyleSheet.create({
     paddingBottom: 48,
     maxHeight: "80%",
   },
-  // editModalSheet: {
-  //   backgroundColor: "#FFFFFF",
-  //   borderTopLeftRadius: 28,
-  //   borderTopRightRadius: 28,
-  //   padding: 24,
-  //   paddingBottom: 48,
-  //   maxHeight: "90%",
-  // },
   modalHandle: {
     width: 40,
     height: 4,
@@ -1242,8 +1230,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     marginBottom: 16,
   },
-
-  // Per-set input grid
   inputGridHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1284,8 +1270,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "transparent",
   },
-
-  // PR hint
   prHint: {
     backgroundColor: "#F0FDF4",
     borderRadius: 10,
@@ -1293,8 +1277,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   prHintText: { fontSize: 13, color: "#16A34A", fontWeight: "600" },
-
-  // Form
   fieldLabel: {
     fontSize: 11,
     fontWeight: "600",
@@ -1317,25 +1299,6 @@ const styles = StyleSheet.create({
   },
   inputFocused: { borderColor: "#1A1714", backgroundColor: "#FFFFFF" },
   row: { flexDirection: "row" },
-
-  // Day grid
-  // dayGrid: { gap: 8, marginTop: 4 },
-  // dayGridItem: {
-  //   flexDirection: "row",
-  //   justifyContent: "space-between",
-  //   alignItems: "center",
-  //   backgroundColor: "#F7F5F2",
-  //   borderRadius: 12,
-  //   paddingHorizontal: 18,
-  //   paddingVertical: 13,
-  //   borderWidth: 1.5,
-  //   borderColor: "transparent",
-  // },
-  // dayGridItemSelected: { backgroundColor: "#1A1714", borderColor: "#1A1714" },
-  // dayGridText: { fontSize: 15, fontWeight: "600", color: "#1A1714" },
-  // dayGridTextSelected: { color: "#F7F5F2" },
-
-  // Buttons
   confirmBtn: {
     backgroundColor: "#1A1714",
     borderRadius: 14,
@@ -1354,7 +1317,6 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: "#9E9890", fontSize: 15, fontWeight: "600" },
   backLink: { fontSize: 15, color: "#1A1714", fontWeight: "600" },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: "#1A1714" },
-
   chartCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 20,
@@ -1372,24 +1334,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 4,
   },
-  chartTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#1A1714",
-  },
-  chartRange: {
-    fontSize: 12,
-    color: "#C4BFB8",
-    fontWeight: "500",
-  },
-  // chartYLabel: {
-  //   fontSize: 10,
-  //   fontWeight: "600",
-  //   color: "#9E9890",
-  //   textTransform: "uppercase",
-  //   letterSpacing: 0.8,
-  //   marginBottom: 4,
-  // },
+  chartTitle: { fontSize: 17, fontWeight: "700", color: "#1A1714" },
+  chartRange: { fontSize: 12, color: "#C4BFB8", fontWeight: "500" },
   chartXLabel: {
     fontSize: 10,
     fontWeight: "600",

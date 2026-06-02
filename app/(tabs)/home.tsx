@@ -14,6 +14,8 @@ import {
 import { router, useFocusEffect } from "expo-router";
 import { useState, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { getUserProfile } from "@/firebase/profile";
+import { useWeightUnit } from "../context/WeightUnitContext";
 
 const DAY_FULL: Record<Day, string> = {
   Mon: "Monday",
@@ -38,16 +40,23 @@ export default function Home() {
   const user = auth.currentUser;
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
+  const [displayName, setDisplayName] = useState<string | null>(null);
 
   const today: Day = DAY_MAP[new Date().getDay()];
   const restMessage = REST_MESSAGES[new Date().getDay() % REST_MESSAGES.length];
 
-  const fetchTodayExercises = async () => {
+  const { format } = useWeightUnit();
+
+  const fetchData = async () => {
     setLoading(true);
     try {
-      const data = await getExercisesByDay(user!.uid, today);
+      const [data, profile] = await Promise.all([
+        getExercisesByDay(user!.uid, today),
+        getUserProfile(user!.uid),
+      ]);
       setExercises(data);
-    } catch (err) {
+      if (profile?.displayName) setDisplayName(profile.displayName);
+    } catch {
       // fail silently on home screen
     } finally {
       setLoading(false);
@@ -56,7 +65,7 @@ export default function Home() {
 
   useFocusEffect(
     useCallback(() => {
-      fetchTodayExercises();
+      fetchData();
     }, []),
   );
 
@@ -65,9 +74,10 @@ export default function Home() {
     router.replace("/");
   };
 
-  const getInitials = (email: string | null | undefined) => {
-    if (!email) return "?";
-    return email.charAt(0).toUpperCase();
+  const getInitials = () => {
+    if (displayName) return displayName.charAt(0).toUpperCase();
+    if (user?.email) return user.email.charAt(0).toUpperCase();
+    return "?";
   };
 
   const getGreeting = () => {
@@ -75,6 +85,11 @@ export default function Home() {
     if (hour < 12) return "Good morning";
     if (hour < 18) return "Good afternoon";
     return "Good evening";
+  };
+
+  const getName = () => {
+    if (displayName) return displayName;
+    return user?.email?.split("@")[0] ?? "User";
   };
 
   return (
@@ -90,13 +105,15 @@ export default function Home() {
         <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>{getGreeting()},</Text>
-            <Text style={styles.emailName}>
-              {user?.email?.split("@")[0] ?? "User"}
-            </Text>
+            <Text style={styles.emailName}>{getName()}</Text>
           </View>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{getInitials(user?.email)}</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.avatar}
+            onPress={() => router.push("/settings")}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.avatarText}>{getInitials()}</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Today label */}
@@ -167,7 +184,7 @@ export default function Home() {
                   {exercise.maxWeight > 0 && (
                     <View style={styles.prBadge}>
                       <Text style={styles.prText}>
-                        🏆 {exercise.maxWeight} kg
+                        🏆 {format(exercise.maxWeight)}
                       </Text>
                     </View>
                   )}

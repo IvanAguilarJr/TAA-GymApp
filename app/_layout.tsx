@@ -4,6 +4,7 @@ import { auth } from "@/firebase/config";
 import { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { configureGoogleSignIn } from "@/firebase/googleAuth";
+import { WeightUnitProvider } from "@/app/context/WeightUnitContext";
 
 // Configure Google Sign-In once when app starts
 configureGoogleSignIn();
@@ -24,16 +25,19 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }}>
-        {user ? (
-          <>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="exercise/[id]" />
-          </>
-        ) : (
-          <Stack.Screen name="(auth)" />
-        )}
-      </Stack>
+      <WeightUnitProvider userId={user?.uid ?? null}>
+        <Stack screenOptions={{ headerShown: false }}>
+          {user ? (
+            <>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="exercise/[id]" />
+              <Stack.Screen name="settings" />
+            </>
+          ) : (
+            <Stack.Screen name="(auth)" />
+          )}
+        </Stack>
+      </WeightUnitProvider>
     </GestureHandlerRootView>
   );
 }
