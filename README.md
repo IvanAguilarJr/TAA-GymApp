@@ -15,12 +15,15 @@ A personal gym tracking app built with React Native and Expo. Log your workouts,
 - **Edit & Delete** — Long press any history entry to correct or remove it
 - **Rest Day Detection** — Shows a motivational message when no exercises are scheduled
 - **Summary Tab** — Overview of total sessions, PRs, and weekly schedule
+- **Settings** — Edit display name, weight unit (kg/lbs), email, and password
+- **Google Sign-In** — OAuth via `@react-native-google-signin/google-signin`
+- **Unified Sign-Out** — Signs out of both Firebase and Google simultaneously
 
 ## Tech Stack
 
 - **Framework** — React Native + Expo Router
 - **Language** — TypeScript
-- **Auth** — Firebase Authentication
+- **Auth** — Firebase Authentication (email/password + Google OAuth)
 - **Database** — Cloud Firestore
 - **Animations** — React Native Reanimated
 - **Gestures** — React Native Gesture Handler
@@ -40,12 +43,15 @@ app/
 │   └── summary.tsx       # Stats and PR overview
 ├── exercise/
 │   └── [id].tsx          # Exercise detail, logging, history
+├── settings.tsx          # Profile, account, and danger zone
 ├── _layout.tsx
 └── index.tsx
 firebase/
 ├── config.ts
 ├── types.ts
-└── exercises.ts
+├── exercises.ts
+├── profile.ts            # User profile CRUD
+└── googleAuth.ts         # Google Sign-In + unified sign-out
 ```
 
 ## Getting Started
@@ -55,6 +61,7 @@ firebase/
 - Node.js >= 20.19.4
 - Expo CLI
 - A Firebase project with Authentication and Firestore enabled
+- Google OAuth credentials (Web Client ID + iOS Client ID)
 
 ### Installation
 
@@ -69,6 +76,7 @@ npm install
 Create a `.env` file in the root of the project:
 
 ```
+# Firebase
 EXPO_PUBLIC_FIREBASE_API_KEY=your_api_key
 EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_auth_domain
 EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
@@ -76,7 +84,17 @@ EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_storage_bucket
 EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
 EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
 EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=your_measurement_id
+
+# Google OAuth
+EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=your_web_client_id
+EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=your_ios_client_id
 ```
+
+**Where to find the Google OAuth credentials:**
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
+2. **Web Client ID** — the OAuth 2.0 client of type "Web application" (also shown in Firebase Console → Authentication → Sign-in method → Google)
+3. **iOS Client ID** — the OAuth 2.0 client of type "iOS" created for your bundle ID
 
 ### Firestore Security Rules
 
@@ -112,6 +130,13 @@ npx expo run:ios
 ```
 users/
 └── {userId}/
+    ├── profile/
+    │   └── settings/
+    │       ├── displayName: string
+    │       ├── photoURL: string | null
+    │       ├── weightUnit: "kg" | "lbs"
+    │       ├── createdAt: number (Unix ms)
+    │       └── updatedAt: number (Unix ms)
     └── exercises/
         └── {exerciseId}/
             ├── name: string
@@ -130,6 +155,24 @@ users/
                   }
                 ]
 ```
+
+### Profile model notes
+
+- Created automatically on first sign-up (email) or first Google login
+- `weightUnit` defaults to `"kg"` and is editable in Settings
+- `photoURL` is stored but currently unused in the UI (reserved for future avatar support)
+- Google sign-in bootstraps the profile from the Google account's `displayName`; email sign-up uses the name entered at registration
+
+## Auth Flows
+
+| Flow                        | Profile created? | How                                                                             |
+| --------------------------- | ---------------- | ------------------------------------------------------------------------------- |
+| Email sign-up               | Yes              | `createUserProfile(uid, displayName)` called immediately after account creation |
+| Email sign-in               | No               | Profile already exists from sign-up                                             |
+| Google sign-in (first time) | Yes              | Bootstrapped from Google account data if `profile/settings` doesn't exist       |
+| Google sign-in (returning)  | No               | Profile exists, skipped                                                         |
+
+Sign-out calls both `firebaseSignOut` and `GoogleSignin.signOut()` together, so the Google account picker appears fresh on the next login.
 
 ## License
 
