@@ -13,7 +13,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { signOut, updateEmail, updatePassword } from "firebase/auth";
+import { updateEmail, updatePassword } from "firebase/auth";
+import { signOut } from "@/firebase/googleAuth";
 import { router } from "expo-router";
 import { auth } from "@/firebase/config";
 import {

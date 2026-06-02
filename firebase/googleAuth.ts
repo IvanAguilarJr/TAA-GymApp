@@ -3,7 +3,11 @@ import {
   statusCodes,
 } from "@react-native-google-signin/google-signin";
 
-import { GoogleAuthProvider, signInWithCredential } from "firebase/auth";
+import {
+  GoogleAuthProvider,
+  signInWithCredential,
+  signOut as firebaseSignOut,
+} from "firebase/auth";
 import { auth } from "@/firebase/config";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/firebase/config";
@@ -63,4 +67,9 @@ export const signOutFromGoogle = async () => {
   } catch (error) {
     // Silently fail - not critical.
   }
+};
+
+export const signOut = async (): Promise<void> => {
+  await firebaseSignOut(auth);
+  await signOutFromGoogle();
 };

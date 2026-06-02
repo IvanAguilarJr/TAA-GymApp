@@ -1,4 +1,4 @@
-import { signOut } from "firebase/auth";
+import { signOut } from "@/firebase/googleAuth";
 import { auth } from "@/firebase/config";
 import { getExercisesByDay } from "@/firebase/exercises";
 import { Exercise, DAY_MAP, Day } from "@/firebase/types";
@@ -70,7 +70,7 @@ export default function Home() {
   );
 
   const logout = async () => {
-    await signOut(auth);
+    await signOut();
     router.replace("/");
   };
 
