@@ -132,7 +132,7 @@ export default function Settings() {
         text: "Sign out",
         style: "destructive",
         onPress: async () => {
-          await signOut(auth);
+          await signOut();
           router.replace("/");
         },
       },

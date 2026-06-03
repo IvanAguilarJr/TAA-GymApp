@@ -6,14 +6,11 @@ import {
   SafeAreaView,
   StatusBar,
   ScrollView,
-  Modal,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { auth } from "@/firebase/config";
 import {
@@ -30,6 +27,8 @@ import { Exercise, Day, ALL_DAYS, SetEntry } from "@/firebase/types";
 import { LineChart } from "react-native-chart-kit";
 import { Dimensions } from "react-native";
 import { useWeightUnit } from "@/app/context/WeightUnitContext";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
+import AppBottomSheet from "@/components/AppBottomSheet";
 
 const DAY_LABELS: Record<Day, string> = {
   Mon: "Monday",
@@ -42,7 +41,6 @@ const DAY_LABELS: Record<Day, string> = {
   None: "Unscheduled",
 };
 
-// One row of inputs for a single set in the log modal
 type SetInputRow = {
   weight: string;
   reps: string;
@@ -53,19 +51,18 @@ export default function ExerciseDetail() {
   const router = useRouter();
   const userId = auth.currentUser?.uid ?? "";
 
-  // ── Weight unit ──────────────────────────────────────────────────────────
   const { unit, toDisplay, toStorage, format } = useWeightUnit();
 
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Log session modal
-  const [logModalVisible, setLogModalVisible] = useState(false);
+  // ── Log session sheet ────────────────────────────────────────────────────
+  const logSheetRef = useRef<BottomSheetModal>(null);
   const [setInputs, setSetInputs] = useState<SetInputRow[]>([]);
   const [logging, setLogging] = useState(false);
 
-  // Edit exercise modal
-  const [editModalVisible, setEditModalVisible] = useState(false);
+  // ── Edit exercise sheet ──────────────────────────────────────────────────
+  const editSheetRef = useRef<BottomSheetModal>(null);
   const [editName, setEditName] = useState("");
   const [editSets, setEditSets] = useState("");
   const [editReps, setEditReps] = useState("");
@@ -75,8 +72,8 @@ export default function ExerciseDetail() {
   const [editRepsFocused, setEditRepsFocused] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Edit history entry modal
-  const [editEntryModalVisible, setEditEntryModalVisible] = useState(false);
+  // ── Edit history entry sheet ─────────────────────────────────────────────
+  const editEntrySheetRef = useRef<BottomSheetModal>(null);
   const [editEntryIndex, setEditEntryIndex] = useState<number | null>(null);
   const [editEntryInputs, setEditEntryInputs] = useState<SetInputRow[]>([]);
   const [savingEntry, setSavingEntry] = useState(false);
@@ -99,7 +96,7 @@ export default function ExerciseDetail() {
     }, [id]),
   );
 
-  // Pre-fill log modal with one row per set, default reps from exercise
+  // ── Log session ──────────────────────────────────────────────────────────
   const openLogModal = () => {
     if (!exercise) return;
     setSetInputs(
@@ -108,7 +105,7 @@ export default function ExerciseDetail() {
         reps: String(exercise.reps),
       })),
     );
-    setLogModalVisible(true);
+    logSheetRef.current?.present();
   };
 
   const updateSetInput = (
@@ -132,7 +129,6 @@ export default function ExerciseDetail() {
         );
         return;
       }
-      // Validate against MAX_WEIGHT_KG after converting user input back to kg
       if (toStorage(w) > MAX_WEIGHT_KG) {
         Alert.alert(
           "Too heavy",
@@ -152,14 +148,14 @@ export default function ExerciseDetail() {
 
     const sets: SetEntry[] = setInputs.map((row, i) => ({
       setNumber: i + 1,
-      weight: toStorage(parseFloat(row.weight)), // ← convert display → kg before saving
+      weight: toStorage(parseFloat(row.weight)),
       reps: parseInt(row.reps),
     }));
 
     setLogging(true);
     try {
       await logSession(userId, exercise!, sets);
-      setLogModalVisible(false);
+      logSheetRef.current?.dismiss();
       setSetInputs([]);
       await fetchExercise();
     } catch (err: any) {
@@ -169,7 +165,6 @@ export default function ExerciseDetail() {
     }
   };
 
-  // Check if any set input beats current PR (compare in kg)
   const hasNewPR = () => {
     if (!exercise) return false;
     return setInputs.some(
@@ -185,14 +180,14 @@ export default function ExerciseDetail() {
     return toDisplay(maxKg - exercise.maxWeight).toFixed(1);
   };
 
-  // Edit exercise modal
+  // ── Edit exercise ────────────────────────────────────────────────────────
   const openEditModal = () => {
     if (!exercise) return;
     setEditName(exercise.name);
     setEditSets(String(exercise.sets));
     setEditReps(String(exercise.reps));
     setEditDay(exercise.day ?? "None");
-    setEditModalVisible(true);
+    editSheetRef.current?.present();
   };
 
   const handleSaveEdit = async () => {
@@ -222,7 +217,7 @@ export default function ExerciseDetail() {
         reps: repsNum,
         day: editDay,
       });
-      setEditModalVisible(false);
+      editSheetRef.current?.dismiss(); // ← was incorrectly .present() before
       await fetchExercise();
     } catch (err: any) {
       Alert.alert("Error", err.message);
@@ -231,7 +226,7 @@ export default function ExerciseDetail() {
     }
   };
 
-  // Long press on history entry
+  // ── Edit history entry ───────────────────────────────────────────────────
   const handleHistoryLongPress = (originalIndex: number) => {
     const entry = exercise!.history[originalIndex];
     Alert.alert(
@@ -244,12 +239,11 @@ export default function ExerciseDetail() {
             setEditEntryIndex(originalIndex);
             setEditEntryInputs(
               entry.sets.map((s) => ({
-                // ← convert stored kg → display unit when pre-filling
                 weight: String(toDisplay(s.weight)),
                 reps: String(s.reps),
               })),
             );
-            setEditEntryModalVisible(true);
+            editEntrySheetRef.current?.present();
           },
         },
         {
@@ -303,14 +297,14 @@ export default function ExerciseDetail() {
 
     const newSets: SetEntry[] = editEntryInputs.map((row, i) => ({
       setNumber: i + 1,
-      weight: toStorage(parseFloat(row.weight)), // ← convert display → kg before saving
+      weight: toStorage(parseFloat(row.weight)),
       reps: parseInt(row.reps),
     }));
 
     setSavingEntry(true);
     try {
       await updateHistoryEntry(userId, exercise!, editEntryIndex, newSets);
-      setEditEntryModalVisible(false);
+      editEntrySheetRef.current?.dismiss();
       setEditEntryIndex(null);
       setEditEntryInputs([]);
       await fetchExercise();
@@ -390,7 +384,6 @@ export default function ExerciseDetail() {
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     .map((entry, index) => ({
       x: index + 1,
-      // ← convert stored kg → display unit for chart
       y: toDisplay(Math.max(...entry.sets.map((s) => s.weight))),
       label: new Date(entry.date).toLocaleDateString("en-US", {
         month: "short",
@@ -441,7 +434,6 @@ export default function ExerciseDetail() {
             </View>
           </View>
 
-          {/* Last session set columns */}
           {lastSession && lastSession.sets && lastSession.sets.length > 0 && (
             <View style={styles.lastSessionBox}>
               <Text style={styles.lastSessionLabel}>Last session</Text>
@@ -453,7 +445,6 @@ export default function ExerciseDetail() {
                     </View>
                     <View style={styles.setBody}>
                       <View style={styles.setStat}>
-                        {/* ← format() converts kg → display unit with suffix */}
                         <Text style={styles.setVal}>{format(set.weight)}</Text>
                         <Text style={styles.setLbl}>Weight</Text>
                       </View>
@@ -473,7 +464,6 @@ export default function ExerciseDetail() {
         {exercise.maxWeight > 0 && (
           <View style={styles.prBar}>
             <Text style={styles.prBarLeft}>🏆 Personal record</Text>
-            {/* ← format() handles kg → display unit */}
             <Text style={styles.prBarRight}>{format(exercise.maxWeight)}</Text>
           </View>
         )}
@@ -487,7 +477,6 @@ export default function ExerciseDetail() {
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <Text style={styles.statValue}>
-              {/* ← format() for PR stat */}
               {exercise.maxWeight > 0 ? format(exercise.maxWeight) : "—"}
             </Text>
             <Text style={styles.statLabel}>PR</Text>
@@ -495,7 +484,6 @@ export default function ExerciseDetail() {
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <Text style={styles.statValue}>
-              {/* ← format() for Last stat */}
               {lastSession
                 ? format(Math.max(...lastSession.sets.map((s) => s.weight)))
                 : "—"}
@@ -525,7 +513,7 @@ export default function ExerciseDetail() {
               }}
               width={Dimensions.get("window").width - 80}
               height={200}
-              yAxisSuffix={` ${unit}`} // ← dynamic unit suffix
+              yAxisSuffix={` ${unit}`}
               chartConfig={{
                 backgroundColor: "#FFFFFF",
                 backgroundGradientFrom: "#FFFFFF",
@@ -534,11 +522,7 @@ export default function ExerciseDetail() {
                 color: () => "#1A1714",
                 labelColor: () => "#9E9890",
                 style: { borderRadius: 12 },
-                propsForDots: {
-                  r: "5",
-                  strokeWidth: "2",
-                  stroke: "#F7F5F2",
-                },
+                propsForDots: { r: "5", strokeWidth: "2", stroke: "#F7F5F2" },
                 propsForBackgroundLines: {
                   stroke: "#ECE8E3",
                   strokeDasharray: "4",
@@ -594,7 +578,6 @@ export default function ExerciseDetail() {
                 delayLongPress={400}
                 activeOpacity={0.8}
               >
-                {/* Session header */}
                 <View style={styles.historyTop}>
                   <View>
                     <Text style={styles.historyDate}>
@@ -614,7 +597,6 @@ export default function ExerciseDetail() {
                   </View>
                 </View>
 
-                {/* Per-set columns */}
                 {entry.sets && entry.sets.length > 0 && (
                   <View style={styles.historySetsGrid}>
                     {entry.sets.map((set) => {
@@ -637,7 +619,6 @@ export default function ExerciseDetail() {
                           >
                             Set {set.setNumber}
                           </Text>
-                          {/* ← format() for history set weight */}
                           <Text
                             style={[
                               styles.historySetVal,
@@ -665,291 +646,237 @@ export default function ExerciseDetail() {
         )}
       </ScrollView>
 
-      {/* ── Log Session Modal ── */}
-      <Modal
-        visible={logModalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setLogModalVisible(false)}
+      {/* ── Log Session Sheet ── */}
+      <AppBottomSheet
+        sheetRef={logSheetRef}
+        snapPoints={["60%", "90%"]}
+        onDismiss={() => setSetInputs([])}
+        scrollable
       >
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-        >
-          <TouchableOpacity
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setLogModalVisible(false)}
-          />
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Log Session</Text>
-            <Text style={styles.modalSub}>
-              {exercise.name} · {exercise.sets} sets
-              {/* ← PR shown in display unit */}
-              {exercise.maxWeight > 0
-                ? ` · PR: ${format(exercise.maxWeight)}`
-                : ""}
-            </Text>
+        <Text style={styles.modalTitle}>Log Session</Text>
+        <Text style={styles.modalSub}>
+          {exercise.name} · {exercise.sets} sets
+          {exercise.maxWeight > 0 ? ` · PR: ${format(exercise.maxWeight)}` : ""}
+        </Text>
 
-            {/* Input grid header — dynamic unit label */}
-            <View style={styles.inputGridHeader}>
-              <View style={styles.inputSetLabelBox} />
-              <Text style={styles.inputGridHeaderText}>Weight ({unit})</Text>
-              <Text style={styles.inputGridHeaderText}>Reps</Text>
+        <View style={styles.inputGridHeader}>
+          <View style={styles.inputSetLabelBox} />
+          <Text style={styles.inputGridHeaderText}>Weight ({unit})</Text>
+          <Text style={styles.inputGridHeaderText}>Reps</Text>
+        </View>
+
+        {setInputs.map((row, i) => (
+          <View key={i} style={styles.inputRow}>
+            <View style={styles.inputSetLabelBox}>
+              <Text style={styles.inputSetLabel}>Set {i + 1}</Text>
             </View>
-
-            {/* One row per set */}
-            {setInputs.map((row, i) => (
-              <View key={i} style={styles.inputRow}>
-                <View style={styles.inputSetLabelBox}>
-                  <Text style={styles.inputSetLabel}>Set {i + 1}</Text>
-                </View>
-                <TextInput
-                  style={styles.setInput}
-                  value={row.weight}
-                  onChangeText={(v) => updateSetInput(i, "weight", v)}
-                  placeholder={
-                    lastSession?.sets?.[i]
-                      ? // ← placeholder from last session also converted to display unit
-                        String(toDisplay(lastSession.sets[i].weight))
-                      : "0"
-                  }
-                  placeholderTextColor="#C4BFB8"
-                  keyboardType="decimal-pad"
-                />
-                <TextInput
-                  style={styles.setInput}
-                  value={row.reps}
-                  onChangeText={(v) => updateSetInput(i, "reps", v)}
-                  placeholder={String(exercise.reps)}
-                  placeholderTextColor="#C4BFB8"
-                  keyboardType="number-pad"
-                />
-              </View>
-            ))}
-
-            {/* New PR hint — delta shown in display unit */}
-            {hasNewPR() && (
-              <View style={styles.prHint}>
-                <Text style={styles.prHintText}>
-                  🎉 New PR! That's {newPRAmount()} {unit} more than your
-                  current best!
-                </Text>
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={[styles.confirmBtn, logging && styles.confirmBtnDisabled]}
-              onPress={handleLogSession}
-              activeOpacity={0.85}
-              disabled={logging}
-            >
-              <Text style={styles.confirmBtnText}>
-                {logging ? "Saving…" : "Save Session"}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setLogModalVisible(false)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ── Edit Exercise Modal ── */}
-      <Modal
-        visible={editModalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setEditModalVisible(false)}
-      >
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-        >
-          <TouchableOpacity
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setEditModalVisible(false)}
-          />
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Edit Exercise</Text>
-
-            <Text style={styles.fieldLabel}>EXERCISE NAME</Text>
             <TextInput
-              value={editName}
-              onChangeText={setEditName}
-              onFocus={() => setEditNameFocused(true)}
-              onBlur={() => setEditNameFocused(false)}
-              placeholder="e.g. Bench Press"
+              style={styles.setInput}
+              value={row.weight}
+              onChangeText={(v) => updateSetInput(i, "weight", v)}
+              placeholder={
+                lastSession?.sets?.[i]
+                  ? String(toDisplay(lastSession.sets[i].weight))
+                  : "0"
+              }
               placeholderTextColor="#C4BFB8"
-              style={[styles.input, editNameFocused && styles.inputFocused]}
+              keyboardType="decimal-pad"
             />
-
-            <View style={styles.row}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={styles.fieldLabel}>SETS</Text>
-                <TextInput
-                  value={editSets}
-                  onChangeText={setEditSets}
-                  onFocus={() => setEditSetsFocused(true)}
-                  onBlur={() => setEditSetsFocused(false)}
-                  placeholder="3"
-                  placeholderTextColor="#C4BFB8"
-                  keyboardType="number-pad"
-                  style={[styles.input, editSetsFocused && styles.inputFocused]}
-                />
-              </View>
-              <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text style={styles.fieldLabel}>REPS</Text>
-                <TextInput
-                  value={editReps}
-                  onChangeText={setEditReps}
-                  onFocus={() => setEditRepsFocused(true)}
-                  onBlur={() => setEditRepsFocused(false)}
-                  placeholder="8"
-                  placeholderTextColor="#C4BFB8"
-                  keyboardType="number-pad"
-                  style={[styles.input, editRepsFocused && styles.inputFocused]}
-                />
-              </View>
-            </View>
-
-            <Text style={styles.fieldLabel}>WORKOUT DAY</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.dayScroll}
-              contentContainerStyle={styles.dayScrollContent}
-            >
-              {ALL_DAYS.map((day) => (
-                <TouchableOpacity
-                  key={day}
-                  style={[
-                    styles.dayChip,
-                    editDay === day && styles.dayChipSelected,
-                  ]}
-                  onPress={() => setEditDay(day)}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.dayChipText,
-                      editDay === day && styles.dayChipTextSelected,
-                    ]}
-                  >
-                    {day}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <TouchableOpacity
-              style={[styles.confirmBtn, saving && styles.confirmBtnDisabled]}
-              onPress={handleSaveEdit}
-              activeOpacity={0.85}
-              disabled={saving}
-            >
-              <Text style={styles.confirmBtnText}>
-                {saving ? "Saving…" : "Save Changes"}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setEditModalVisible(false)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
+            <TextInput
+              style={styles.setInput}
+              value={row.reps}
+              onChangeText={(v) => updateSetInput(i, "reps", v)}
+              placeholder={String(exercise.reps)}
+              placeholderTextColor="#C4BFB8"
+              keyboardType="number-pad"
+            />
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        ))}
 
-      {/* ── Edit History Entry Modal ── */}
-      <Modal
-        visible={editEntryModalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setEditEntryModalVisible(false)}
-      >
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        {hasNewPR() && (
+          <View style={styles.prHint}>
+            <Text style={styles.prHintText}>
+              🎉 New PR! That's {newPRAmount()} {unit} more than your current
+              best!
+            </Text>
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[styles.confirmBtn, logging && styles.confirmBtnDisabled]}
+          onPress={handleLogSession}
+          activeOpacity={0.85}
+          disabled={logging}
         >
-          <TouchableOpacity
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setEditEntryModalVisible(false)}
+          <Text style={styles.confirmBtnText}>
+            {logging ? "Saving…" : "Save Session"}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.cancelBtn}
+          onPress={() => logSheetRef.current?.dismiss()}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.cancelBtnText}>Cancel</Text>
+        </TouchableOpacity>
+      </AppBottomSheet>
+
+      {/* ── Edit Exercise Sheet ── */}
+      <AppBottomSheet sheetRef={editSheetRef} snapPoints={["75%"]}>
+        <View style={{ paddingHorizontal: 24, paddingBottom: 32 }}>
+          <Text style={styles.modalTitle}>Edit Exercise</Text>
+
+          <Text style={styles.fieldLabel}>EXERCISE NAME</Text>
+          <TextInput
+            value={editName}
+            onChangeText={setEditName}
+            onFocus={() => setEditNameFocused(true)}
+            onBlur={() => setEditNameFocused(false)}
+            placeholder="e.g. Bench Press"
+            placeholderTextColor="#C4BFB8"
+            style={[styles.input, editNameFocused && styles.inputFocused]}
           />
-          <ScrollView
-            style={styles.modalScrollWrapper}
-            contentContainerStyle={styles.modalSheet}
-            keyboardShouldPersistTaps="handled"
-          >
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Edit Session</Text>
-            <Text style={styles.modalSub}>Correct the weights or reps</Text>
 
-            {/* Input grid header — dynamic unit label */}
-            <View style={styles.inputGridHeader}>
-              <View style={styles.inputSetLabelBox} />
-              <Text style={styles.inputGridHeaderText}>Weight ({unit})</Text>
-              <Text style={styles.inputGridHeaderText}>Reps</Text>
+          <View style={styles.row}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.fieldLabel}>SETS</Text>
+              <TextInput
+                value={editSets}
+                onChangeText={setEditSets}
+                onFocus={() => setEditSetsFocused(true)}
+                onBlur={() => setEditSetsFocused(false)}
+                placeholder="3"
+                placeholderTextColor="#C4BFB8"
+                keyboardType="number-pad"
+                style={[styles.input, editSetsFocused && styles.inputFocused]}
+              />
             </View>
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <Text style={styles.fieldLabel}>REPS</Text>
+              <TextInput
+                value={editReps}
+                onChangeText={setEditReps}
+                onFocus={() => setEditRepsFocused(true)}
+                onBlur={() => setEditRepsFocused(false)}
+                placeholder="8"
+                placeholderTextColor="#C4BFB8"
+                keyboardType="number-pad"
+                style={[styles.input, editRepsFocused && styles.inputFocused]}
+              />
+            </View>
+          </View>
 
-            {editEntryInputs.map((row, i) => (
-              <View key={i} style={styles.inputRow}>
-                <View style={styles.inputSetLabelBox}>
-                  <Text style={styles.inputSetLabel}>Set {i + 1}</Text>
-                </View>
-                <TextInput
-                  style={styles.setInput}
-                  value={row.weight}
-                  onChangeText={(v) => updateEditEntryInput(i, "weight", v)}
-                  placeholderTextColor="#C4BFB8"
-                  keyboardType="decimal-pad"
-                />
-                <TextInput
-                  style={styles.setInput}
-                  value={row.reps}
-                  onChangeText={(v) => updateEditEntryInput(i, "reps", v)}
-                  placeholderTextColor="#C4BFB8"
-                  keyboardType="number-pad"
-                />
-              </View>
+          <Text style={styles.fieldLabel}>WORKOUT DAY</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.dayScroll}
+            contentContainerStyle={styles.dayScrollContent}
+          >
+            {ALL_DAYS.map((day) => (
+              <TouchableOpacity
+                key={day}
+                style={[
+                  styles.dayChip,
+                  editDay === day && styles.dayChipSelected,
+                ]}
+                onPress={() => setEditDay(day)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.dayChipText,
+                    editDay === day && styles.dayChipTextSelected,
+                  ]}
+                >
+                  {day}
+                </Text>
+              </TouchableOpacity>
             ))}
-
-            <TouchableOpacity
-              style={[
-                styles.confirmBtn,
-                savingEntry && styles.confirmBtnDisabled,
-              ]}
-              onPress={handleSaveEntryEdit}
-              activeOpacity={0.85}
-              disabled={savingEntry}
-            >
-              <Text style={styles.confirmBtnText}>
-                {savingEntry ? "Saving…" : "Save Changes"}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setEditEntryModalVisible(false)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
           </ScrollView>
-        </KeyboardAvoidingView>
-      </Modal>
+
+          <TouchableOpacity
+            style={[styles.confirmBtn, saving && styles.confirmBtnDisabled]}
+            onPress={handleSaveEdit}
+            activeOpacity={0.85}
+            disabled={saving}
+          >
+            <Text style={styles.confirmBtnText}>
+              {saving ? "Saving…" : "Save Changes"}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={() => editSheetRef.current?.dismiss()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </AppBottomSheet>
+
+      {/* ── Edit History Entry Sheet ── */}
+      <AppBottomSheet
+        sheetRef={editEntrySheetRef}
+        snapPoints={["60%", "90%"]}
+        onDismiss={() => {
+          setEditEntryIndex(null);
+          setEditEntryInputs([]);
+        }}
+        scrollable
+      >
+        <Text style={styles.modalTitle}>Edit Session</Text>
+        <Text style={styles.modalSub}>Correct the weights or reps</Text>
+
+        <View style={styles.inputGridHeader}>
+          <View style={styles.inputSetLabelBox} />
+          <Text style={styles.inputGridHeaderText}>Weight ({unit})</Text>
+          <Text style={styles.inputGridHeaderText}>Reps</Text>
+        </View>
+
+        {editEntryInputs.map((row, i) => (
+          <View key={i} style={styles.inputRow}>
+            <View style={styles.inputSetLabelBox}>
+              <Text style={styles.inputSetLabel}>Set {i + 1}</Text>
+            </View>
+            <TextInput
+              style={styles.setInput}
+              value={row.weight}
+              onChangeText={(v) => updateEditEntryInput(i, "weight", v)}
+              placeholderTextColor="#C4BFB8"
+              keyboardType="decimal-pad"
+            />
+            <TextInput
+              style={styles.setInput}
+              value={row.reps}
+              onChangeText={(v) => updateEditEntryInput(i, "reps", v)}
+              placeholderTextColor="#C4BFB8"
+              keyboardType="number-pad"
+            />
+          </View>
+        ))}
+
+        <TouchableOpacity
+          style={[styles.confirmBtn, savingEntry && styles.confirmBtnDisabled]}
+          onPress={handleSaveEntryEdit}
+          activeOpacity={0.85}
+          disabled={savingEntry}
+        >
+          <Text style={styles.confirmBtnText}>
+            {savingEntry ? "Saving…" : "Save Changes"}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.cancelBtn}
+          onPress={() => editEntrySheetRef.current?.dismiss()}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.cancelBtnText}>Cancel</Text>
+        </TouchableOpacity>
+      </AppBottomSheet>
     </SafeAreaView>
   );
 }
@@ -1190,33 +1117,6 @@ const styles = StyleSheet.create({
   emptyHistoryIcon: { fontSize: 40, marginBottom: 4 },
   emptyHistoryText: { fontSize: 16, fontWeight: "700", color: "#1A1714" },
   emptyHistorySubtext: { fontSize: 13, color: "#9E9890", textAlign: "center" },
-  modalOverlay: { flex: 1, justifyContent: "flex-end" },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(26,23,20,0.4)",
-  },
-  modalScrollWrapper: {
-    maxHeight: "90%",
-    flexGrow: 0,
-    alignSelf: "flex-end",
-    width: "100%",
-  },
-  modalSheet: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    paddingBottom: 48,
-    maxHeight: "80%",
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: "#EEEBE6",
-    borderRadius: 2,
-    alignSelf: "center",
-    marginBottom: 20,
-  },
   modalTitle: {
     fontSize: 22,
     fontWeight: "700",

@@ -4,17 +4,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  Modal,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   Alert,
   ScrollView,
-  SectionList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { auth } from "@/firebase/config";
 import {
   getExercises,
@@ -31,6 +27,8 @@ import DraggableFlatList, {
   ScaleDecorator,
 } from "react-native-draggable-flatlist";
 import Swipeable from "react-native-gesture-handler/Swipeable";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
+import AppBottomSheet from "@/components/AppBottomSheet";
 
 const DAY_LABELS: Record<Day, string> = {
   Mon: "Monday",
@@ -53,8 +51,8 @@ export default function Exercises() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Add modal
-  const [addModalVisible, setAddModalVisible] = useState(false);
+  // Add sheet
+  const addSheetRef = useRef<BottomSheetModal>(null);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [sets, setSets] = useState("");
@@ -64,8 +62,8 @@ export default function Exercises() {
   const [setsFocused, setSetsFocused] = useState(false);
   const [repsFocused, setRepsFocused] = useState(false);
 
-  // Move day modal
-  const [moveModalVisible, setMoveModalVisible] = useState(false);
+  // Move day sheet
+  const moveSheetRef = useRef<BottomSheetModal>(null);
   const [movingExercise, setMovingExercise] = useState<Exercise | null>(null);
   const [moving, setMoving] = useState(false);
 
@@ -91,7 +89,6 @@ export default function Exercises() {
     }, []),
   );
 
-  // Build sections — only days with exercises, in ALL_DAYS order
   const sections: Section[] = ALL_DAYS.reduce<Section[]>((acc, day) => {
     const dayExercises = exercises.filter((e) => e.day === day);
     if (dayExercises.length > 0) {
@@ -114,7 +111,7 @@ export default function Exercises() {
     setAdding(true);
     try {
       await addExercise(userId, name.trim(), setsNum, repsNum, selectedDay);
-      closeAddModal();
+      closeAddSheet();
       await fetchExercises();
     } catch (err: any) {
       Alert.alert("Error", err.message);
@@ -123,12 +120,16 @@ export default function Exercises() {
     }
   };
 
-  const closeAddModal = () => {
+  const openAddSheet = () => {
     setName("");
     setSets("");
     setReps("");
     setSelectedDay("None");
-    setAddModalVisible(false);
+    addSheetRef.current?.present();
+  };
+
+  const closeAddSheet = () => {
+    addSheetRef.current?.dismiss();
   };
 
   const handleDelete = (exercise: Exercise) => {
@@ -153,9 +154,13 @@ export default function Exercises() {
     );
   };
 
-  const handleOpenMoveModal = (exercise: Exercise) => {
+  const openMoveSheet = (exercise: Exercise) => {
     setMovingExercise(exercise);
-    setMoveModalVisible(true);
+    moveSheetRef.current?.present();
+  };
+
+  const closeMoveSheet = () => {
+    moveSheetRef.current?.dismiss();
   };
 
   const handleMoveDay = async (day: Day) => {
@@ -163,7 +168,7 @@ export default function Exercises() {
     setMoving(true);
     try {
       await updateExerciseDay(userId, movingExercise.id, day);
-      setMoveModalVisible(false);
+      closeMoveSheet();
       setMovingExercise(null);
       await fetchExercises();
     } catch (err: any) {
@@ -174,25 +179,22 @@ export default function Exercises() {
   };
 
   const handleDragEnd = async (day: Day, reordered: Exercise[]) => {
-    // Optimistically update UI
     setExercises((prev) => {
       const otherDays = prev.filter((e) => e.day !== day);
       return [...otherDays, ...reordered];
     });
-    // Persist to Firestore
     try {
       await updateExercisesOrder(userId, reordered);
     } catch (err: any) {
       Alert.alert("Error saving order", err.message);
-      await fetchExercises(); // revert on failure
+      await fetchExercises();
     }
   };
 
-  // Swipe left action — reveals "Move Day" button
   const renderRightActions = (exercise: Exercise) => (
     <TouchableOpacity
       style={styles.swipeAction}
-      onPress={() => handleOpenMoveModal(exercise)}
+      onPress={() => openMoveSheet(exercise)}
       activeOpacity={0.85}
     >
       <Text style={styles.swipeActionText}>📅</Text>
@@ -269,7 +271,7 @@ export default function Exercises() {
           </View>
           <TouchableOpacity
             style={styles.addBtn}
-            onPress={() => setAddModalVisible(true)}
+            onPress={openAddSheet}
             activeOpacity={0.85}
           >
             <Text style={styles.addBtnText}>+ Add</Text>
@@ -299,15 +301,12 @@ export default function Exercises() {
             </Text>
           </View>
         ) : (
-          // Outer ScrollView for the whole page
-          // Each day section gets its own DraggableFlatList
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 32 }}
           >
             {sections.map((section) => (
               <View key={section.day}>
-                {/* Section header */}
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionHeaderText}>{section.title}</Text>
                   <Text style={styles.sectionCount}>
@@ -315,8 +314,6 @@ export default function Exercises() {
                     {section.data.length !== 1 ? "s" : ""}
                   </Text>
                 </View>
-
-                {/* Draggable list for this day */}
                 <DraggableFlatList
                   data={section.data}
                   keyExtractor={(item) => item.id}
@@ -324,7 +321,7 @@ export default function Exercises() {
                     renderDraggableItem(section.day, params)
                   }
                   onDragEnd={({ data }) => handleDragEnd(section.day, data)}
-                  scrollEnabled={false} // outer ScrollView handles scrolling
+                  scrollEnabled={false}
                   activationDistance={5}
                 />
               </View>
@@ -333,179 +330,160 @@ export default function Exercises() {
         )}
       </View>
 
-      {/* ── Add Exercise Modal ── */}
-      <Modal
-        visible={addModalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={closeAddModal}
+      {/* ── Add Exercise Sheet ── */}
+      <AppBottomSheet
+        sheetRef={addSheetRef}
+        snapPoints={["75%"]}
+        onDismiss={() => {
+          setName("");
+          setSets("");
+          setReps("");
+          setSelectedDay("None");
+        }}
       >
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-        >
-          <TouchableOpacity
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={closeAddModal}
+        <View style={{ paddingHorizontal: 24, paddingBottom: 32 }}>
+          <Text style={styles.modalTitle}>New Exercise</Text>
+
+          <Text style={styles.fieldLabel}>EXERCISE NAME</Text>
+          <TextInput
+            value={name}
+            onChangeText={setName}
+            onFocus={() => setNameFocused(true)}
+            onBlur={() => setNameFocused(false)}
+            placeholder="e.g. Bench Press"
+            placeholderTextColor="#C4BFB8"
+            style={[styles.input, nameFocused && styles.inputFocused]}
           />
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>New Exercise</Text>
 
-            <Text style={styles.fieldLabel}>EXERCISE NAME</Text>
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              onFocus={() => setNameFocused(true)}
-              onBlur={() => setNameFocused(false)}
-              placeholder="e.g. Bench Press"
-              placeholderTextColor="#C4BFB8"
-              style={[styles.input, nameFocused && styles.inputFocused]}
-            />
-
-            <View style={styles.row}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={styles.fieldLabel}>SETS</Text>
-                <TextInput
-                  value={sets}
-                  onChangeText={setSets}
-                  onFocus={() => setSetsFocused(true)}
-                  onBlur={() => setSetsFocused(false)}
-                  placeholder="4"
-                  placeholderTextColor="#C4BFB8"
-                  keyboardType="number-pad"
-                  style={[styles.input, setsFocused && styles.inputFocused]}
-                />
-              </View>
-              <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text style={styles.fieldLabel}>REPS</Text>
-                <TextInput
-                  value={reps}
-                  onChangeText={setReps}
-                  onFocus={() => setRepsFocused(true)}
-                  onBlur={() => setRepsFocused(false)}
-                  placeholder="8"
-                  placeholderTextColor="#C4BFB8"
-                  keyboardType="number-pad"
-                  style={[styles.input, repsFocused && styles.inputFocused]}
-                />
-              </View>
+          <View style={styles.row}>
+            <View style={{ flex: 1, marginRight: 10 }}>
+              <Text style={styles.fieldLabel}>SETS</Text>
+              <TextInput
+                value={sets}
+                onChangeText={setSets}
+                onFocus={() => setSetsFocused(true)}
+                onBlur={() => setSetsFocused(false)}
+                placeholder="4"
+                placeholderTextColor="#C4BFB8"
+                keyboardType="number-pad"
+                style={[styles.input, setsFocused && styles.inputFocused]}
+              />
             </View>
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.fieldLabel}>REPS</Text>
+              <TextInput
+                value={reps}
+                onChangeText={setReps}
+                onFocus={() => setRepsFocused(true)}
+                onBlur={() => setRepsFocused(false)}
+                placeholder="8"
+                placeholderTextColor="#C4BFB8"
+                keyboardType="number-pad"
+                style={[styles.input, repsFocused && styles.inputFocused]}
+              />
+            </View>
+          </View>
 
-            {/* Day picker */}
-            <Text style={styles.fieldLabel}>WORKOUT DAY</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.dayScroll}
-              contentContainerStyle={styles.dayScrollContent}
-            >
-              {ALL_DAYS.map((day) => (
-                <TouchableOpacity
-                  key={day}
+          <Text style={styles.fieldLabel}>WORKOUT DAY</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.dayScroll}
+            contentContainerStyle={styles.dayScrollContent}
+          >
+            {ALL_DAYS.map((day) => (
+              <TouchableOpacity
+                key={day}
+                style={[
+                  styles.dayChip,
+                  selectedDay === day && styles.dayChipSelected,
+                ]}
+                onPress={() => setSelectedDay(day)}
+                activeOpacity={0.7}
+              >
+                <Text
                   style={[
-                    styles.dayChip,
-                    selectedDay === day && styles.dayChipSelected,
+                    styles.dayChipText,
+                    selectedDay === day && styles.dayChipTextSelected,
                   ]}
-                  onPress={() => setSelectedDay(day)}
-                  activeOpacity={0.7}
                 >
-                  <Text
-                    style={[
-                      styles.dayChipText,
-                      selectedDay === day && styles.dayChipTextSelected,
-                    ]}
-                  >
-                    {day}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                  {day}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
 
-            <TouchableOpacity
-              style={[styles.confirmBtn, adding && styles.confirmBtnDisabled]}
-              onPress={handleAdd}
-              activeOpacity={0.85}
-              disabled={adding}
-            >
-              <Text style={styles.confirmBtnText}>
-                {adding ? "Adding…" : "Add Exercise"}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={closeAddModal}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ── Move Day Modal ── */}
-      <Modal
-        visible={moveModalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setMoveModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
           <TouchableOpacity
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setMoveModalVisible(false)}
-          />
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Move to Day</Text>
-            {movingExercise && (
-              <Text style={styles.modalSubtitle}>{movingExercise.name}</Text>
-            )}
+            style={[styles.confirmBtn, adding && styles.confirmBtnDisabled]}
+            onPress={handleAdd}
+            activeOpacity={0.85}
+            disabled={adding}
+          >
+            <Text style={styles.confirmBtnText}>
+              {adding ? "Adding…" : "Add Exercise"}
+            </Text>
+          </TouchableOpacity>
 
-            <View style={styles.dayGrid}>
-              {ALL_DAYS.map((day) => {
-                const isCurrent = movingExercise?.day === day;
-                return (
-                  <TouchableOpacity
-                    key={day}
-                    style={[
-                      styles.dayGridItem,
-                      isCurrent && styles.dayGridItemCurrent,
-                      moving && styles.dayGridItemDisabled,
-                    ]}
-                    onPress={() => handleMoveDay(day)}
-                    activeOpacity={0.7}
-                    disabled={moving || isCurrent}
-                  >
-                    <Text
-                      style={[
-                        styles.dayGridText,
-                        isCurrent && styles.dayGridTextCurrent,
-                      ]}
-                    >
-                      {DAY_LABELS[day]}
-                    </Text>
-                    {isCurrent && (
-                      <Text style={styles.currentDayBadge}>current</Text>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setMoveModalVisible(false)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={closeAddSheet}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </TouchableOpacity>
         </View>
-      </Modal>
+      </AppBottomSheet>
+
+      {/* ── Move Day Sheet ── */}
+      <AppBottomSheet
+        sheetRef={moveSheetRef}
+        snapPoints={["70%"]}
+        onDismiss={() => setMovingExercise(null)}
+      >
+        <Text style={styles.modalTitle}>Move to Day</Text>
+        {movingExercise && (
+          <Text style={styles.modalSubtitle}>{movingExercise.name}</Text>
+        )}
+
+        <View style={styles.dayGrid}>
+          {ALL_DAYS.map((day) => {
+            const isCurrent = movingExercise?.day === day;
+            return (
+              <TouchableOpacity
+                key={day}
+                style={[
+                  styles.dayGridItem,
+                  isCurrent && styles.dayGridItemCurrent,
+                  moving && styles.dayGridItemDisabled,
+                ]}
+                onPress={() => handleMoveDay(day)}
+                activeOpacity={0.7}
+                disabled={moving || isCurrent}
+              >
+                <Text
+                  style={[
+                    styles.dayGridText,
+                    isCurrent && styles.dayGridTextCurrent,
+                  ]}
+                >
+                  {DAY_LABELS[day]}
+                </Text>
+                {isCurrent && (
+                  <Text style={styles.currentDayBadge}>current</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <TouchableOpacity
+          style={styles.cancelBtn}
+          onPress={closeMoveSheet}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.cancelBtnText}>Cancel</Text>
+        </TouchableOpacity>
+      </AppBottomSheet>
     </SafeAreaView>
   );
 }
@@ -515,7 +493,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 24, paddingTop: 20 },
   centered: { flex: 1, justifyContent: "center", alignItems: "center", gap: 8 },
 
-  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -547,7 +524,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // Hint
   hintBox: {
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
@@ -562,7 +538,6 @@ const styles = StyleSheet.create({
   },
   hintText: { fontSize: 12, color: "#9E9890", fontWeight: "500" },
 
-  // Section header
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -579,7 +554,6 @@ const styles = StyleSheet.create({
   },
   sectionCount: { fontSize: 12, color: "#9E9890", fontWeight: "500" },
 
-  // Exercise card
   exerciseCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -654,7 +628,6 @@ const styles = StyleSheet.create({
   },
   deleteBtnText: { fontSize: 12, color: "#EF4444", fontWeight: "700" },
 
-  // Swipe action
   swipeAction: {
     backgroundColor: "#1A1714",
     justifyContent: "center",
@@ -672,7 +645,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // Empty state
   emptyIcon: { fontSize: 48, marginBottom: 8 },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: "#1A1714" },
   emptySubtitle: {
@@ -682,27 +654,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  // Modal shared
-  modalOverlay: { flex: 1, justifyContent: "flex-end" },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(26, 23, 20, 0.4)",
-  },
-  modalSheet: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    paddingBottom: 40,
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: "#EEEBE6",
-    borderRadius: 2,
-    alignSelf: "center",
-    marginBottom: 20,
-  },
   modalTitle: {
     fontSize: 22,
     fontWeight: "700",
@@ -717,7 +668,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  // Form
   fieldLabel: {
     fontSize: 11,
     fontWeight: "600",
@@ -741,9 +691,8 @@ const styles = StyleSheet.create({
   inputFocused: { borderColor: "#1A1714", backgroundColor: "#FFFFFF" },
   row: { flexDirection: "row" },
 
-  // Day picker chips
   dayScroll: { marginTop: 4 },
-  dayScrollContent: { gap: 8, paddingVertical: 4 },
+  dayScrollContent: { gap: 8, paddingVertical: 4, paddingHorizontal: 2 },
   dayChip: {
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -756,7 +705,6 @@ const styles = StyleSheet.create({
   dayChipText: { fontSize: 14, fontWeight: "600", color: "#9E9890" },
   dayChipTextSelected: { color: "#F7F5F2" },
 
-  // Day grid (move modal)
   dayGrid: { gap: 10, marginTop: 8 },
   dayGridItem: {
     flexDirection: "row",
@@ -781,7 +729,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
 
-  // Buttons
   confirmBtn: {
     backgroundColor: "#1A1714",
     borderRadius: 14,
