@@ -8,8 +8,12 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Animated,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { useState, useCallback, useRef } from "react";
 import { auth } from "@/firebase/config";
 import {
@@ -29,6 +33,7 @@ import DraggableFlatList, {
 import Swipeable from "react-native-gesture-handler/Swipeable";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import AppBottomSheet from "@/components/AppBottomSheet";
+import * as Haptics from "expo-haptics";
 
 const DAY_LABELS: Record<Day, string> = {
   Mon: "Monday",
@@ -67,6 +72,33 @@ export default function Exercises() {
   const [movingExercise, setMovingExercise] = useState<Exercise | null>(null);
   const [moving, setMoving] = useState(false);
 
+  // Multi-select
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  // Select mode animation (drives circle width + bottom bar) — useNativeDriver: false for layout
+  const selectModeAnim = useRef(new Animated.Value(0)).current;
+  // Per-item spring animations for the circle fill — useNativeDriver: true for transform
+  const selectionAnims = useRef<Record<string, Animated.Value>>({});
+
+  const circleContainerWidth = selectModeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 38],
+  });
+  const bottomBarTranslateY = selectModeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [100, 0],
+  });
+
+  const getSelectionAnim = (id: string) => {
+    if (!selectionAnims.current[id]) {
+      selectionAnims.current[id] = new Animated.Value(0);
+    }
+    return selectionAnims.current[id];
+  };
+
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const userId = auth.currentUser?.uid ?? "";
 
@@ -111,9 +143,11 @@ export default function Exercises() {
     setAdding(true);
     try {
       await addExercise(userId, name.trim(), setsNum, repsNum, selectedDay);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       closeAddSheet();
       await fetchExercises();
     } catch (err: any) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", err.message);
     } finally {
       setAdding(false);
@@ -121,6 +155,7 @@ export default function Exercises() {
   };
 
   const openAddSheet = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setName("");
     setSets("");
     setReps("");
@@ -133,6 +168,7 @@ export default function Exercises() {
   };
 
   const handleDelete = (exercise: Exercise) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert(
       "Delete exercise",
       `Are you sure you want to delete "${exercise.name}"? This will remove all its history.`,
@@ -144,8 +180,10 @@ export default function Exercises() {
           onPress: async () => {
             try {
               await deleteExercise(userId, exercise.id);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               await fetchExercises();
             } catch (err: any) {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
               Alert.alert("Error", err.message);
             }
           },
@@ -155,6 +193,7 @@ export default function Exercises() {
   };
 
   const openMoveSheet = (exercise: Exercise) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setMovingExercise(exercise);
     moveSheetRef.current?.present();
   };
@@ -165,13 +204,16 @@ export default function Exercises() {
 
   const handleMoveDay = async (day: Day) => {
     if (!movingExercise) return;
+    Haptics.selectionAsync();
     setMoving(true);
     try {
       await updateExerciseDay(userId, movingExercise.id, day);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       closeMoveSheet();
       setMovingExercise(null);
       await fetchExercises();
     } catch (err: any) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", err.message);
     } finally {
       setMoving(false);
@@ -191,34 +233,162 @@ export default function Exercises() {
     }
   };
 
-  const renderRightActions = (exercise: Exercise) => (
-    <TouchableOpacity
-      style={styles.swipeAction}
-      onPress={() => openMoveSheet(exercise)}
-      activeOpacity={0.85}
-    >
-      <Text style={styles.swipeActionText}>📅</Text>
-      <Text style={styles.swipeActionLabel}>Move Day</Text>
-    </TouchableOpacity>
-  );
+  const enterSelectMode = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSelectMode(true);
+    Animated.spring(selectModeAnim, {
+      toValue: 1,
+      useNativeDriver: false,
+      tension: 180,
+      friction: 14,
+    }).start();
+  };
+
+  const exitSelectMode = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.spring(selectModeAnim, {
+      toValue: 0,
+      useNativeDriver: false,
+      tension: 180,
+      friction: 14,
+    }).start(() => {
+      setSelectMode(false);
+      setSelectedIds(new Set());
+      Object.values(selectionAnims.current).forEach((a) => a.setValue(0));
+    });
+  };
+
+  const toggleSelect = (id: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const anim = getSelectionAnim(id);
+    const willBeSelected = !selectedIds.has(id);
+    Animated.spring(anim, {
+      toValue: willBeSelected ? 1 : 0,
+      useNativeDriver: true,
+      tension: 300,
+      friction: 18,
+    }).start();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    Alert.alert(
+      "Delete Exercises",
+      `Delete ${selectedIds.size} exercise${selectedIds.size !== 1 ? "s" : ""}? This will remove all their history.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await Promise.all(
+                [...selectedIds].map((id) => deleteExercise(userId, id)),
+              );
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              exitSelectMode();
+              await fetchExercises();
+            } catch (err: any) {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              Alert.alert("Error", err.message);
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const renderRightActions = (
+    exercise: Exercise,
+    progress: Animated.AnimatedInterpolation<number>,
+  ) => {
+    const translateX = progress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [160, 0],
+      extrapolate: "clamp",
+    });
+
+    return (
+      <Animated.View
+        style={[styles.swipeActionsRow, { transform: [{ translateX }] }]}
+      >
+        <TouchableOpacity
+          style={styles.swipeMoveBtn}
+          onPress={() => openMoveSheet(exercise)}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.swipeActionIcon}>📅</Text>
+          <Text style={styles.swipeActionLabel}>Move</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.swipeDeleteBtn}
+          onPress={() => handleDelete(exercise)}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.swipeActionIcon}>🗑️</Text>
+          <Text style={styles.swipeActionLabel}>Delete</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
 
   const renderDraggableItem = (
     day: Day,
     { item, drag, isActive }: RenderItemParams<Exercise>,
-  ) => (
-    <ScaleDecorator activeScale={1.03}>
-      <Swipeable
-        renderRightActions={() => renderRightActions(item)}
-        overshootRight={false}
+  ) => {
+    const selAnim = getSelectionAnim(item.id);
+    const isSelected = selectedIds.has(item.id);
+
+    const card = (
+      <TouchableOpacity
+        style={[
+          styles.exerciseCard,
+          isActive && styles.exerciseCardActive,
+          isSelected && styles.exerciseCardSelected,
+        ]}
+        onPress={() => {
+          if (selectMode) toggleSelect(item.id);
+          else router.push(`/exercise/${item.id}`);
+        }}
+        onLongPress={() => {
+          if (!selectMode) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            drag();
+          }
+        }}
+        delayLongPress={200}
+        activeOpacity={0.8}
       >
-        <TouchableOpacity
-          style={[styles.exerciseCard, isActive && styles.exerciseCardActive]}
-          onPress={() => router.push(`/exercise/${item.id}`)}
-          onLongPress={drag}
-          delayLongPress={200}
-          activeOpacity={0.8}
+        {/* Animated circle — slides in from left in select mode */}
+        <Animated.View
+          style={[styles.circleContainer, { width: circleContainerWidth }]}
         >
-          <View style={styles.exerciseLeft}>
+          <View
+            style={[
+              styles.circleOuter,
+              isSelected && styles.circleOuterSelected,
+            ]}
+          >
+            <Animated.View
+              style={[styles.circleFill, { transform: [{ scale: selAnim }] }]}
+            >
+              <Text style={styles.circleCheck}>✓</Text>
+            </Animated.View>
+          </View>
+        </Animated.View>
+
+        <View style={styles.exerciseLeft}>
+          {!selectMode && (
             <TouchableOpacity
               onLongPress={drag}
               delayLongPress={200}
@@ -227,34 +397,45 @@ export default function Exercises() {
             >
               <Text style={styles.dragHandleIcon}>⠿</Text>
             </TouchableOpacity>
-            <View style={styles.exerciseIconBox}>
-              <Text style={styles.exerciseIcon}>💪</Text>
-            </View>
-            <View>
-              <Text style={styles.exerciseName}>{item.name}</Text>
-              <Text style={styles.exerciseMeta}>
-                {item.sets} sets · {item.reps} reps
-              </Text>
-            </View>
+          )}
+          <View style={styles.exerciseIconBox}>
+            <Text style={styles.exerciseIcon}>💪</Text>
           </View>
-          <View style={styles.exerciseRight}>
-            {item.maxWeight > 0 && (
-              <View style={styles.prBadge}>
-                <Text style={styles.prText}>🏆 {item.maxWeight} kg</Text>
-              </View>
-            )}
-            <TouchableOpacity
-              onPress={() => handleDelete(item)}
-              style={styles.deleteBtn}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Text style={styles.deleteBtnText}>✕</Text>
-            </TouchableOpacity>
+          <View>
+            <Text style={styles.exerciseName}>{item.name}</Text>
+            <Text style={styles.exerciseMeta}>
+              {item.sets} sets · {item.reps} reps
+            </Text>
           </View>
-        </TouchableOpacity>
-      </Swipeable>
-    </ScaleDecorator>
-  );
+        </View>
+
+        <View style={styles.exerciseRight}>
+          {item.maxWeight > 0 && (
+            <View style={styles.prBadge}>
+              <Text style={styles.prText}>🏆 {item.maxWeight} kg</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+
+    return (
+      <ScaleDecorator activeScale={1.03}>
+        {selectMode ? (
+          card
+        ) : (
+          <Swipeable
+            renderRightActions={(progress) =>
+              renderRightActions(item, progress)
+            }
+            overshootRight={false}
+          >
+            {card}
+          </Swipeable>
+        )}
+      </ScaleDecorator>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -264,25 +445,54 @@ export default function Exercises() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.headerTitle}>My Exercises</Text>
+            <Text style={styles.headerTitle}>
+              {selectMode ? "Select Exercises" : "My Exercises"}
+            </Text>
             <Text style={styles.headerSub}>
-              {exercises.length} exercise{exercises.length !== 1 ? "s" : ""}
+              {selectMode
+                ? `${selectedIds.size} selected`
+                : `${exercises.length} exercise${exercises.length !== 1 ? "s" : ""}`}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={openAddSheet}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.addBtnText}>+ Add</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {selectMode ? (
+              <TouchableOpacity
+                style={styles.cancelSelectBtn}
+                onPress={exitSelectMode}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.cancelSelectBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                {exercises.length > 0 && (
+                  <TouchableOpacity
+                    style={styles.selectBtn}
+                    onPress={enterSelectMode}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.selectBtnText}>Select</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.addBtn}
+                  onPress={openAddSheet}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.addBtnText}>+ Add</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
         </View>
 
         {/* Hint */}
         {exercises.length > 0 && (
           <View style={styles.hintBox}>
             <Text style={styles.hintText}>
-              ⠿ Long press to reorder · Swipe left to move day
+              {selectMode
+                ? "Tap exercises to select · Tap Cancel to exit"
+                : "⠿ Long press to reorder · Swipe left for actions"}
             </Text>
           </View>
         )}
@@ -303,7 +513,7 @@ export default function Exercises() {
         ) : (
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 32 }}
+            contentContainerStyle={{ paddingBottom: selectMode ? 120 : 32 }}
           >
             {sections.map((section) => (
               <View key={section.day}>
@@ -329,6 +539,37 @@ export default function Exercises() {
           </ScrollView>
         )}
       </View>
+
+      {/* Bottom Delete Bar — slides up in select mode */}
+      <Animated.View
+        style={[
+          styles.selectBar,
+          {
+            transform: [{ translateY: bottomBarTranslateY }],
+            opacity: selectModeAnim,
+            bottom: insets.bottom + 50,
+          },
+        ]}
+        pointerEvents={selectMode ? "auto" : "none"}
+      >
+        <TouchableOpacity
+          style={[
+            styles.deleteSelectedBtn,
+            selectedIds.size === 0 && styles.deleteSelectedBtnDisabled,
+          ]}
+          onPress={handleDeleteSelected}
+          disabled={selectedIds.size === 0 || deleting}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.deleteSelectedBtnText}>
+            {deleting
+              ? "Deleting…"
+              : selectedIds.size > 0
+                ? `Delete ${selectedIds.size} Exercise${selectedIds.size !== 1 ? "s" : ""}`
+                : "Select exercises to delete"}
+          </Text>
+        </TouchableOpacity>
+      </Animated.View>
 
       {/* ── Add Exercise Sheet ── */}
       <AppBottomSheet
@@ -511,6 +752,11 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     marginTop: 2,
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   addBtn: {
     backgroundColor: "#1A1714",
     paddingHorizontal: 18,
@@ -522,6 +768,32 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 14,
     letterSpacing: 0.3,
+  },
+  selectBtn: {
+    backgroundColor: "#F7F5F2",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#E8E4DF",
+  },
+  selectBtnText: {
+    color: "#1A1714",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  cancelSelectBtn: {
+    backgroundColor: "#F7F5F2",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#E8E4DF",
+  },
+  cancelSelectBtnText: {
+    color: "#1A1714",
+    fontWeight: "600",
+    fontSize: 14,
   },
 
   hintBox: {
@@ -567,6 +839,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 3,
+    borderWidth: 1.5,
+    borderColor: "transparent",
   },
   exerciseCardActive: {
     shadowOpacity: 0.15,
@@ -574,6 +848,43 @@ const styles = StyleSheet.create({
     elevation: 8,
     backgroundColor: "#FAFAF9",
   },
+  exerciseCardSelected: {
+    borderColor: "#1A1714",
+  },
+
+  // Select circle
+  circleContainer: {
+    overflow: "hidden",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  circleOuter: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "#C4BFB8",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  circleOuterSelected: {
+    borderColor: "#1A1714",
+  },
+  circleFill: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#1A1714",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  circleCheck: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 13,
+  },
+
   exerciseLeft: {
     flexDirection: "row",
     alignItems: "center",
@@ -618,30 +929,66 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   prText: { fontSize: 11, fontWeight: "700", color: "#854D0E" },
-  deleteBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: "#FEF2F2",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  deleteBtnText: { fontSize: 12, color: "#EF4444", fontWeight: "700" },
 
-  swipeAction: {
+  // Swipe actions
+  swipeActionsRow: {
+    flexDirection: "row",
+    marginBottom: 10,
+  },
+  swipeMoveBtn: {
     backgroundColor: "#1A1714",
+    width: 80,
     justifyContent: "center",
     alignItems: "center",
-    width: 80,
-    borderRadius: 16,
-    marginBottom: 10,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
     gap: 4,
   },
-  swipeActionText: { fontSize: 20 },
+  swipeDeleteBtn: {
+    backgroundColor: "#EF4444",
+    width: 80,
+    justifyContent: "center",
+    alignItems: "center",
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
+    gap: 4,
+  },
+  swipeActionIcon: { fontSize: 20 },
   swipeActionLabel: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#F7F5F2",
+    color: "#FFFFFF",
+    letterSpacing: 0.3,
+  },
+
+  // Bottom select bar
+  selectBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 20,
+    shadowColor: "#1A1714",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  deleteSelectedBtn: {
+    backgroundColor: "#EF4444",
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  deleteSelectedBtnDisabled: {
+    backgroundColor: "#C4BFB8",
+  },
+  deleteSelectedBtnText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
     letterSpacing: 0.3,
   },
 
