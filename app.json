@@ -11,7 +11,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ivanjr.TAA",
-      "googleServicesFile": "./ios/TAA/GoogleService-Info.plist"
+      "googleServicesFile": "./ios/TAA/GoogleService-Info_TAA.plist",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "Allow QINETIC to access your photos to set a profile picture."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -46,11 +50,23 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.778760395898-u4nm3pf3ujfbrldccp61q11php2vrp28"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow QINETIC to access your photos to set a profile picture."
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bbf6f49d-7499-44e5-871a-d57bd6f7d1c6"
+      }
     }
   }
 }

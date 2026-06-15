@@ -12,7 +12,7 @@ import {
   TouchableWithoutFeedback,
 } from "react-native";
 import { useState } from "react";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
 import { auth } from "@/firebase/config";
 import { createUserProfile } from "@/firebase/profile";
 import { Link, useRouter } from "expo-router";
@@ -49,7 +49,8 @@ export default function Signup() {
       );
       // Create profile using email prefix as the default display name
       await createUserProfile(user.uid, email.split("@")[0]);
-      router.replace("/(tabs)/home");
+      await sendEmailVerification(user);
+      router.replace("/(auth)/verify-email");
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -65,7 +66,7 @@ export default function Signup() {
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <SafeAreaView style={styles.safe}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F7F5F2" />
+        <StatusBar barStyle="light-content" backgroundColor="#000000" />
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -74,7 +75,7 @@ export default function Signup() {
             {/* Branding */}
             <View style={styles.brandBlock}>
               <View style={styles.logoBox}>
-                <Text style={styles.logoText}>TAA</Text>
+                <Text style={styles.logoText}>Q</Text>
               </View>
               <Text style={styles.title}>Create account</Text>
               <Text style={styles.subtitle}>Sign up to get started</Text>
@@ -93,7 +94,7 @@ export default function Signup() {
                 onFocus={() => setEmailFocused(true)}
                 onBlur={() => setEmailFocused(false)}
                 placeholder="you@example.com"
-                placeholderTextColor="#C4BFB8"
+                placeholderTextColor="#555555"
                 style={[styles.input, emailFocused && styles.inputFocused]}
               />
 
@@ -105,7 +106,7 @@ export default function Signup() {
                 onFocus={() => setPasswordFocused(true)}
                 onBlur={() => setPasswordFocused(false)}
                 placeholder="Min. 6 characters"
-                placeholderTextColor="#C4BFB8"
+                placeholderTextColor="#555555"
                 style={[styles.input, passwordFocused && styles.inputFocused]}
               />
 
@@ -117,7 +118,7 @@ export default function Signup() {
                 onFocus={() => setConfirmFocused(true)}
                 onBlur={() => setConfirmFocused(false)}
                 placeholder="Re-enter password"
-                placeholderTextColor="#C4BFB8"
+                placeholderTextColor="#555555"
                 style={[
                   styles.input,
                   confirmFocused && styles.inputFocused,
@@ -153,7 +154,7 @@ export default function Signup() {
             </View>
 
             <Text style={styles.copyright}>
-              TAA • {new Date().getFullYear()}
+              QINETIC • {new Date().getFullYear()}
             </Text>
           </View>
         </KeyboardAvoidingView>
@@ -165,7 +166,7 @@ export default function Signup() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
   },
   container: {
     flex: 1,
@@ -184,18 +185,18 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 18,
-    backgroundColor: "#1A1714",
+    backgroundColor: "#000000",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 20,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 6,
   },
   logoText: {
-    color: "#F7F5F2",
+    color: "#000000",
     fontSize: 18,
     fontWeight: "800",
     letterSpacing: 1.5,
@@ -203,24 +204,24 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
     letterSpacing: -0.5,
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
-    color: "#9E9890",
+    color: "#555555",
     fontWeight: "500",
     letterSpacing: 0.2,
   },
 
   // Card
   card: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#111111",
     borderRadius: 20,
     padding: 24,
     marginBottom: 20,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.07,
     shadowRadius: 12,
@@ -233,7 +234,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 4,
-    backgroundColor: "#1A1714",
+    backgroundColor: "#000000",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
   },
@@ -242,26 +243,26 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#9E9890",
+    color: "#555555",
     letterSpacing: 1.2,
     textTransform: "uppercase",
     marginBottom: 8,
     marginTop: 16,
   },
   input: {
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
-    color: "#1A1714",
+    color: "#FFD944",
     fontWeight: "500",
     borderWidth: 1.5,
     borderColor: "transparent",
   },
   inputFocused: {
-    borderColor: "#1A1714",
-    backgroundColor: "#FFFFFF",
+    borderColor: "#FFD944",
+    backgroundColor: "#111111",
   },
   inputValid: {
     borderColor: "#22C55E",
@@ -286,17 +287,17 @@ const styles = StyleSheet.create({
 
   // Button
   signupBtn: {
-    backgroundColor: "#1A1714",
+    backgroundColor: "#FFD944",
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
     marginTop: 24,
   },
   signupBtnDisabled: {
-    backgroundColor: "#9E9890",
+    backgroundColor: "#555555",
   },
   signupBtnText: {
-    color: "#F7F5F2",
+    color: "#000000",
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.3,
@@ -311,18 +312,18 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 14,
-    color: "#9E9890",
+    color: "#555555",
     fontWeight: "500",
   },
   footerLink: {
     fontSize: 14,
-    color: "#1A1714",
+    color: "#FFD944",
     fontWeight: "700",
   },
   copyright: {
     textAlign: "center",
     fontSize: 11,
-    color: "#C4BFB8",
+    color: "#555555",
     letterSpacing: 1,
     fontWeight: "500",
   },

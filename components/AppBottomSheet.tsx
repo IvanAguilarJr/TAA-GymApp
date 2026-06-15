@@ -44,12 +44,12 @@ export default function AppBottomSheet({
       onDismiss={onDismiss}
       backdropComponent={renderBackdrop}
       handleIndicatorStyle={{
-        backgroundColor: "#EEEBE6",
+        backgroundColor: "#222222",
         width: 40,
         height: 4,
       }}
       backgroundStyle={{
-        backgroundColor: "#FFFFFF",
+        backgroundColor: "#111111",
         borderTopLeftRadius: 35,
         borderTopRightRadius: 35,
       }}

@@ -9,12 +9,16 @@ import {
   ActivityIndicator,
   Alert,
   Switch,
+  Linking,
 } from "react-native";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { updateEmail, updatePassword } from "firebase/auth";
+import { updateEmail, updatePassword, sendEmailVerification } from "firebase/auth";
 import { signOut } from "@/firebase/googleAuth";
+import { deleteUserAccount } from "@/firebase/deleteAccount";
 import { router } from "expo-router";
 import { auth } from "@/firebase/config";
 import {
@@ -22,6 +26,7 @@ import {
   updateUserProfile,
   UserProfile,
 } from "@/firebase/profile";
+import { uploadProfilePhoto } from "@/firebase/storage";
 import { useWeightUnit } from "./context/WeightUnitContext";
 
 export default function Settings() {
@@ -30,6 +35,8 @@ export default function Settings() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // Editable fields
   const [displayName, setDisplayName] = useState("");
@@ -63,6 +70,32 @@ export default function Settings() {
       fetchProfile();
     }, []),
   );
+
+  const handlePickPhoto = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission needed", "Please allow access to your photo library.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled) return;
+    const uri = result.assets[0].uri;
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadProfilePhoto(user!.uid, uri);
+      await updateUserProfile(user!.uid, { photoURL: url });
+      setProfile((prev) => (prev ? { ...prev, photoURL: url } : prev));
+    } catch {
+      Alert.alert("Error", "Could not upload photo. Please try again.");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   const getInitials = () => {
     if (profile?.displayName)
@@ -98,7 +131,11 @@ export default function Settings() {
     if (!newEmail.trim()) return;
     try {
       await updateEmail(user!, newEmail.trim());
-      Alert.alert("Done", "Email updated successfully.");
+      await sendEmailVerification(user!);
+      Alert.alert(
+        "Verification sent",
+        `Verification email sent to ${newEmail.trim()}. Please verify before your new email takes effect.`,
+      );
       setNewEmail("");
     } catch (e: any) {
       Alert.alert("Error", e.message ?? "Could not update email.");
@@ -125,6 +162,10 @@ export default function Settings() {
     }
   };
 
+  const handlePrivacyPolicy = () => {
+    Linking.openURL("https://quackquick.org");
+  };
+
   const handleSignOut = () => {
     Alert.alert("Sign out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
@@ -149,15 +190,31 @@ export default function Settings() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
+            setDeleting(true);
             try {
-              await user!.delete();
+              await deleteUserAccount(user!.uid, user!);
               router.replace("/");
             } catch (e: any) {
-              Alert.alert(
-                "Error",
-                e.message ??
-                  "Could not delete account. You may need to re-login first.",
-              );
+              if (e.message === "REAUTH_REQUIRED") {
+                Alert.alert(
+                  "Sign in required",
+                  "For security, please sign out and sign back in before deleting your account.",
+                  [
+                    {
+                      text: "Sign out now",
+                      onPress: async () => {
+                        await signOut();
+                        router.replace("/");
+                      },
+                    },
+                    { text: "Cancel", style: "cancel" },
+                  ],
+                );
+              } else {
+                Alert.alert("Error", "Could not delete account. Please try again.");
+              }
+            } finally {
+              setDeleting(false);
             }
           },
         },
@@ -169,7 +226,7 @@ export default function Settings() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.loadingBox}>
-          <ActivityIndicator size="large" color="#1A1714" />
+          <ActivityIndicator size="large" color="#FFD944" />
         </View>
       </SafeAreaView>
     );
@@ -177,7 +234,7 @@ export default function Settings() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F7F5F2" />
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.container}
@@ -198,9 +255,31 @@ export default function Settings() {
 
         {/* Avatar + name preview */}
         <View style={styles.profilePreview}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{getInitials()}</Text>
-          </View>
+          <TouchableOpacity
+            onPress={handlePickPhoto}
+            disabled={uploadingPhoto}
+            activeOpacity={0.8}
+            style={styles.avatarWrapper}
+          >
+            {profile?.photoURL ? (
+              <Image
+                source={{ uri: profile.photoURL }}
+                style={styles.avatar}
+                contentFit="cover"
+              />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{getInitials()}</Text>
+              </View>
+            )}
+            <View style={styles.avatarCameraBtn}>
+              {uploadingPhoto ? (
+                <ActivityIndicator size="small" color="#FFD944" />
+              ) : (
+                <Text style={styles.avatarCameraIcon}>📷</Text>
+              )}
+            </View>
+          </TouchableOpacity>
           <View>
             <Text style={styles.previewName}>
               {profile?.displayName || user?.email?.split("@")[0] || "User"}
@@ -220,7 +299,7 @@ export default function Settings() {
             value={displayName}
             onChangeText={setDisplayName}
             placeholder="Your name"
-            placeholderTextColor="#C4BFB8"
+            placeholderTextColor="#555555"
             autoCorrect={false}
           />
 
@@ -257,7 +336,7 @@ export default function Settings() {
             disabled={saving}
           >
             {saving ? (
-              <ActivityIndicator size="small" color="#F7F5F2" />
+              <ActivityIndicator size="small" color="#000000" />
             ) : (
               <Text style={styles.saveBtnText}>Save changes</Text>
             )}
@@ -275,7 +354,7 @@ export default function Settings() {
             value={newEmail}
             onChangeText={setNewEmail}
             placeholder={user?.email ?? "New email address"}
-            placeholderTextColor="#C4BFB8"
+            placeholderTextColor="#555555"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -296,7 +375,7 @@ export default function Settings() {
             value={newPassword}
             onChangeText={setNewPassword}
             placeholder="New password"
-            placeholderTextColor="#C4BFB8"
+            placeholderTextColor="#555555"
             secureTextEntry
           />
           <TextInput
@@ -304,7 +383,7 @@ export default function Settings() {
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             placeholder="Confirm new password"
-            placeholderTextColor="#C4BFB8"
+            placeholderTextColor="#555555"
             secureTextEntry
           />
           <TouchableOpacity
@@ -322,6 +401,14 @@ export default function Settings() {
           <View style={[styles.cardAccent, { backgroundColor: "#EF4444" }]} />
 
           <TouchableOpacity
+            style={[styles.secondaryBtn, { marginBottom: 10 }]}
+            onPress={handlePrivacyPolicy}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.secondaryBtnText}>Privacy Policy</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={styles.logoutBtn}
             onPress={handleSignOut}
             activeOpacity={0.85}
@@ -330,15 +417,20 @@ export default function Settings() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.deleteBtn}
+            style={[styles.deleteBtn, deleting && styles.deleteBtnDisabled]}
             onPress={handleDeleteAccount}
             activeOpacity={0.85}
+            disabled={deleting}
           >
-            <Text style={styles.deleteBtnText}>Delete account</Text>
+            {deleting ? (
+              <ActivityIndicator size="small" color="#EF4444" />
+            ) : (
+              <Text style={styles.deleteBtnText}>Delete account</Text>
+            )}
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.footer}>TAA • {new Date().getFullYear()}</Text>
+        <Text style={styles.footer}>QINETIC • {new Date().getFullYear()}</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -351,7 +443,7 @@ function SectionLabel({ label }: { label: string }) {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
   },
   scroll: { flex: 1 },
   container: {
@@ -377,19 +469,19 @@ const styles = StyleSheet.create({
   },
   backArrow: {
     fontSize: 28,
-    color: "#9E9890",
+    color: "#555555",
     lineHeight: 28,
     marginRight: 4,
   },
   backText: {
     fontSize: 15,
-    color: "#9E9890",
+    color: "#555555",
     fontWeight: "600",
   },
   pageTitle: {
     fontSize: 26,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
     letterSpacing: -0.5,
   },
 
@@ -398,38 +490,57 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 16,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#111111",
     borderRadius: 20,
     padding: 20,
     marginBottom: 28,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.07,
     shadowRadius: 12,
     elevation: 4,
   },
+  avatarWrapper: {
+    width: 56,
+    height: 56,
+  },
   avatar: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#1A1714",
+    backgroundColor: "#000000",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  avatarText: {
+    color: "#FFD944",
+    fontSize: 22,
+    fontWeight: "700",
+  },
+  avatarCameraBtn: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#111111",
     justifyContent: "center",
     alignItems: "center",
   },
-  avatarText: {
-    color: "#F7F5F2",
-    fontSize: 22,
-    fontWeight: "700",
+  avatarCameraIcon: {
+    fontSize: 11,
   },
   previewName: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
     letterSpacing: -0.3,
   },
   previewEmail: {
     fontSize: 13,
-    color: "#9E9890",
+    color: "#555555",
     fontWeight: "500",
     marginTop: 2,
   },
@@ -438,7 +549,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 11,
     fontWeight: "800",
-    color: "#9E9890",
+    color: "#555555",
     letterSpacing: 1.5,
     marginBottom: 10,
     marginLeft: 4,
@@ -446,11 +557,11 @@ const styles = StyleSheet.create({
 
   // Card
   card: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#111111",
     borderRadius: 20,
     padding: 20,
     marginBottom: 24,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.07,
     shadowRadius: 12,
@@ -463,7 +574,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 4,
-    backgroundColor: "#1A1714",
+    backgroundColor: "#000000",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
   },
@@ -472,25 +583,25 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#9E9890",
+    color: "#555555",
     letterSpacing: 0.5,
     marginBottom: 8,
     marginTop: 4,
   },
   input: {
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 13,
     fontSize: 15,
-    color: "#1A1714",
+    color: "#FFD944",
     fontWeight: "500",
   },
 
   // Segment control (kg / lbs)
   segmentRow: {
     flexDirection: "row",
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 12,
     padding: 4,
     gap: 4,
@@ -502,20 +613,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   segmentBtnActive: {
-    backgroundColor: "#1A1714",
+    backgroundColor: "#000000",
   },
   segmentText: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#9E9890",
+    color: "#555555",
   },
   segmentTextActive: {
-    color: "#F7F5F2",
+    color: "#FFD944",
   },
 
   // Save button
   saveBtn: {
-    backgroundColor: "#1A1714",
+    backgroundColor: "#FFD944",
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
@@ -525,7 +636,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   saveBtnText: {
-    color: "#F7F5F2",
+    color: "#000000",
     fontSize: 15,
     fontWeight: "700",
     letterSpacing: 0.3,
@@ -533,14 +644,14 @@ const styles = StyleSheet.create({
 
   // Secondary button
   secondaryBtn: {
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 12,
     paddingVertical: 13,
     alignItems: "center",
     marginTop: 12,
   },
   secondaryBtnText: {
-    color: "#1A1714",
+    color: "#FFD944",
     fontSize: 14,
     fontWeight: "700",
   },
@@ -548,29 +659,32 @@ const styles = StyleSheet.create({
   // Divider
   divider: {
     height: 1,
-    backgroundColor: "#EEEBE6",
+    backgroundColor: "#222222",
     marginVertical: 20,
   },
 
   // Sign out / delete
   logoutBtn: {
-    backgroundColor: "#1A1714",
+    backgroundColor: "#FFD944",
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
     marginBottom: 10,
   },
   logoutText: {
-    color: "#F7F5F2",
+    color: "#000000",
     fontSize: 15,
     fontWeight: "700",
     letterSpacing: 0.3,
   },
   deleteBtn: {
-    backgroundColor: "#FEE2E2",
+    backgroundColor: "#1A0000",
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
+  },
+  deleteBtnDisabled: {
+    opacity: 0.5,
   },
   deleteBtnText: {
     color: "#EF4444",
@@ -581,7 +695,7 @@ const styles = StyleSheet.create({
   footer: {
     textAlign: "center",
     fontSize: 11,
-    color: "#C4BFB8",
+    color: "#555555",
     letterSpacing: 1,
     fontWeight: "500",
     marginTop: 8,

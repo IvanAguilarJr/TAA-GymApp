@@ -24,23 +24,24 @@ const exercisesRef = (userId: string) =>
 
 // ─── READ ────────────────────────────────────────────────────────────────────
 
-/**
- * Fetch all exercises for a user, sorted by order within each day.
- */
 export const getExercises = async (userId: string): Promise<Exercise[]> => {
   const q = query(exercisesRef(userId), orderBy("createdAt", "asc"));
   const snapshot = await getDocs(q);
-  const exercises = snapshot.docs.map((doc) => ({
-    id: doc.id,
-    order: 0,
-    history: [],
-    ...doc.data(),
-  })) as Exercise[];
-
-  return exercises.sort((a, b) => {
-    if (a.day === b.day) return (a.order ?? 0) - (b.order ?? 0);
-    return 0;
+  const exercises = snapshot.docs.map((d) => {
+    const data = d.data();
+    const rawDay = data.day as Day | undefined;
+    const rawDays = data.days as Day[] | undefined;
+    const days: Day[] = rawDays ?? (rawDay && rawDay !== "None" ? [rawDay] : []);
+    const { day: _legacyDay, days: _legacyDays, ...rest } = data;
+    return {
+      id: d.id,
+      order: 0,
+      history: [],
+      ...rest,
+      days,
+    } as Exercise;
   });
+  return exercises.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 };
 
 /**
@@ -69,7 +70,7 @@ export const getExercisesByDay = async (
   day: Day,
 ): Promise<Exercise[]> => {
   const all = await getExercises(userId);
-  return all.filter((e) => e.day === day);
+  return all.filter((e) => e.days.includes(day));
 };
 
 // ─── CREATE ──────────────────────────────────────────────────────────────────
@@ -82,9 +83,12 @@ export const addExercise = async (
   name: string,
   sets: number,
   reps: number,
-  day: Day = "None",
+  days: Day[] = [],
+  muscleTag?: string,
+  typeTag?: string,
+  emoji?: string,
 ): Promise<string> => {
-  const existing = await getExercisesByDay(userId, day);
+  const existing = await getExercises(userId);
   const order = existing.length;
 
   const clampedSets = Math.min(sets, MAX_SETS);
@@ -94,11 +98,14 @@ export const addExercise = async (
     name,
     sets: clampedSets,
     reps: clampedReps,
-    day,
+    days,
     order,
     maxWeight: 0,
     history: [],
     createdAt: new Date().toISOString(),
+    ...(muscleTag !== undefined && { muscleTag }),
+    ...(typeTag !== undefined && { typeTag }),
+    ...(emoji !== undefined && { emoji }),
   });
   return docRef.id;
 };
@@ -111,7 +118,7 @@ export const addExercise = async (
 export const updateExercise = async (
   userId: string,
   exerciseId: string,
-  updates: Partial<Pick<Exercise, "name" | "sets" | "reps" | "day">>,
+  updates: Partial<Pick<Exercise, "name" | "sets" | "reps" | "emoji">>,
 ): Promise<void> => {
   if (updates.sets !== undefined)
     updates.sets = Math.min(updates.sets, MAX_SETS);
@@ -122,19 +129,13 @@ export const updateExercise = async (
   await updateDoc(ref, updates);
 };
 
-/**
- * Update only the day of an exercise.
- * Puts it at the end of the new day group.
- */
-export const updateExerciseDay = async (
+export const updateExerciseDays = async (
   userId: string,
   exerciseId: string,
-  day: Day,
+  days: Day[],
 ): Promise<void> => {
-  const existing = await getExercisesByDay(userId, day);
-  const order = existing.length;
   const ref = doc(db, "users", userId, "exercises", exerciseId);
-  await updateDoc(ref, { day, order });
+  await updateDoc(ref, { days });
 };
 
 /**
@@ -164,9 +165,9 @@ export const initializeExerciseOrder = async (
   const byDay: Record<string, { id: string; hasOrder: boolean }[]> = {};
   snapshot.docs.forEach((doc) => {
     const data = doc.data();
-    const day = data.day ?? "None";
-    if (!byDay[day]) byDay[day] = [];
-    byDay[day].push({ id: doc.id, hasOrder: data.order !== undefined });
+    const dayKey = data.days?.[0] ?? data.day ?? "None";
+    if (!byDay[dayKey]) byDay[dayKey] = [];
+    byDay[dayKey].push({ id: doc.id, hasOrder: data.order !== undefined });
   });
 
   const batch = writeBatch(db);

@@ -63,7 +63,7 @@ export default function Login() {
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <SafeAreaView style={styles.safe}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F7F5F2" />
+        <StatusBar barStyle="light-content" backgroundColor="#000000" />
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -91,7 +91,7 @@ export default function Login() {
                 onFocus={() => setEmailFocused(true)}
                 onBlur={() => setEmailFocused(false)}
                 placeholder="you@example.com"
-                placeholderTextColor="#C4BFB8"
+                placeholderTextColor="#555555"
                 style={[styles.input, emailFocused && styles.inputFocused]}
               />
 
@@ -103,7 +103,7 @@ export default function Login() {
                 onFocus={() => setPasswordFocused(true)}
                 onBlur={() => setPasswordFocused(false)}
                 placeholder="••••••••"
-                placeholderTextColor="#C4BFB8"
+                placeholderTextColor="#555555"
                 style={[styles.input, passwordFocused && styles.inputFocused]}
               />
 
@@ -133,7 +133,7 @@ export default function Login() {
                 disabled={loading || googleLoading}
               >
                 {googleLoading ? (
-                  <ActivityIndicator size="small" color="#1A1714" />
+                  <ActivityIndicator size="small" color="#FFD944" />
                 ) : (
                   <>
                     <Text style={styles.googleIcon}>G</Text>
@@ -152,7 +152,7 @@ export default function Login() {
                 activeOpacity={0.85}
               >
                 {appleLoading ? (
-                  <ActivityIndicator size="small" color="#1A1714" />
+                  <ActivityIndicator size="small" color="#FFD944" />
                 ) : (
                   <>
                     <Text style={styles.appleIcon}>{"🍎"}</Text>
@@ -183,7 +183,7 @@ export default function Login() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
   },
   container: {
     flex: 1,
@@ -202,18 +202,18 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 18,
-    backgroundColor: "#1A1714",
+    backgroundColor: "#000000",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 20,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 6,
   },
   logoText: {
-    color: "#F7F5F2",
+    color: "#000000",
     fontSize: 18,
     fontWeight: "800",
     letterSpacing: 1.5,
@@ -221,24 +221,24 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
     letterSpacing: -0.5,
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
-    color: "#9E9890",
+    color: "#555555",
     fontWeight: "500",
     letterSpacing: 0.2,
   },
 
   // Card
   card: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#111111",
     borderRadius: 20,
     padding: 24,
     marginBottom: 20,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.07,
     shadowRadius: 12,
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 4,
-    backgroundColor: "#1A1714",
+    backgroundColor: "#000000",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
   },
@@ -260,41 +260,41 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#9E9890",
+    color: "#555555",
     letterSpacing: 1.2,
     textTransform: "uppercase",
     marginBottom: 8,
     marginTop: 16,
   },
   input: {
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
-    color: "#1A1714",
+    color: "#FFD944",
     fontWeight: "500",
     borderWidth: 1.5,
     borderColor: "transparent",
   },
   inputFocused: {
-    borderColor: "#1A1714",
-    backgroundColor: "#FFFFFF",
+    borderColor: "#FFD944",
+    backgroundColor: "#111111",
   },
 
   // Button
   loginBtn: {
-    backgroundColor: "#1A1714",
+    backgroundColor: "#FFD944",
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
     marginTop: 24,
   },
   loginBtnDisabled: {
-    backgroundColor: "#9E9890",
+    backgroundColor: "#555555",
   },
   loginBtnText: {
-    color: "#F7F5F2",
+    color: "#000000",
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.3,
@@ -307,30 +307,30 @@ const styles = StyleSheet.create({
     marginVertical: 16,
     gap: 12,
   },
-  dividerLine: { flex: 1, height: 1, backgroundColor: "#EEEBE6" },
-  dividerText: { fontSize: 13, color: "#9E9890", fontWeight: "500" },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "#222222" },
+  dividerText: { fontSize: 13, color: "#555555", fontWeight: "500" },
 
   // Google Button
   googleBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 14,
     paddingVertical: 14,
     gap: 10,
     borderWidth: 1.5,
-    borderColor: "#EEEBE6",
+    borderColor: "#222222",
   },
   googleIcon: {
     fontSize: 16,
     fontWeight: "800",
-    color: "#1A1714",
+    color: "#FFD944",
   },
   googleBtnText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#1A1714",
+    color: "#FFD944",
   },
 
   appleBtn: {
@@ -338,24 +338,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 14,
     paddingVertical: 14,
     gap: 10,
     borderWidth: 1.5,
-    borderColor: "#EEEBE6",
+    borderColor: "#222222",
   },
 
   appleBtnText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#1A1714",
+    color: "#FFD944",
   },
 
   appleIcon: {
     fontSize: 16,
     fontWeight: "800",
-    color: "#1A1714",
+    color: "#FFD944",
   },
 
   btnDisabled: {
@@ -371,18 +371,18 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 14,
-    color: "#9E9890",
+    color: "#555555",
     fontWeight: "500",
   },
   footerLink: {
     fontSize: 14,
-    color: "#1A1714",
+    color: "#FFD944",
     fontWeight: "700",
   },
   copyright: {
     textAlign: "center",
     fontSize: 11,
-    color: "#C4BFB8",
+    color: "#555555",
     letterSpacing: 1,
     fontWeight: "500",
   },

@@ -22,6 +22,16 @@ export default function TabsLayout() {
         <Label>Exercises</Label>
       </NativeTabs.Trigger>
 
+      <NativeTabs.Trigger name="schedule">
+        <Icon
+          sf={{
+            default: "calendar",
+            selected: "calendar.fill",
+          }}
+        />
+        <Label>Schedule</Label>
+      </NativeTabs.Trigger>
+
       <NativeTabs.Trigger name="summary">
         <Icon sf="chart.bar.fill" />
         <Label>Summary</Label>

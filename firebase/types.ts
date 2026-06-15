@@ -51,6 +51,9 @@ export type Exercise = {
   maxWeight: number;
   history: WeightEntry[];
   createdAt: string;
-  day: Day;
+  days: Day[];
   order: number;
+  muscleTag?: string;
+  typeTag?: string;
+  emoji?: string;
 };

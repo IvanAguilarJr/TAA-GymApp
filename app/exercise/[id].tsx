@@ -23,23 +23,19 @@ import {
   MAX_SETS,
   MAX_WEIGHT_KG,
 } from "@/firebase/exercises";
-import { Exercise, Day, ALL_DAYS, SetEntry } from "@/firebase/types";
+import { Exercise, SetEntry } from "@/firebase/types";
+
+const EXERCISE_EMOJIS = [
+  "💪","🏋️","🦵","🔝","🙌","📐","🦿","💀","🏃","🚴",
+  "🤸","⚡","🔥","🥊","🎯","🏊","🧘","⛹️","🤼","🏇",
+  "🦾","🧗","🥋","🎽","🏅","🛡️","⚔️","🌊","🏔️","🎪",
+];
 import { LineChart } from "react-native-chart-kit";
 import { Dimensions } from "react-native";
 import { useWeightUnit } from "@/app/context/WeightUnitContext";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import AppBottomSheet from "@/components/AppBottomSheet";
 
-const DAY_LABELS: Record<Day, string> = {
-  Mon: "Monday",
-  Tue: "Tuesday",
-  Wed: "Wednesday",
-  Thu: "Thursday",
-  Fri: "Friday",
-  Sat: "Saturday",
-  Sun: "Sunday",
-  None: "Unscheduled",
-};
 
 type SetInputRow = {
   weight: string;
@@ -66,7 +62,8 @@ export default function ExerciseDetail() {
   const [editName, setEditName] = useState("");
   const [editSets, setEditSets] = useState("");
   const [editReps, setEditReps] = useState("");
-  const [editDay, setEditDay] = useState<Day>("None");
+  const [editEmoji, setEditEmoji] = useState<string>("💪");
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [editNameFocused, setEditNameFocused] = useState(false);
   const [editSetsFocused, setEditSetsFocused] = useState(false);
   const [editRepsFocused, setEditRepsFocused] = useState(false);
@@ -186,7 +183,8 @@ export default function ExerciseDetail() {
     setEditName(exercise.name);
     setEditSets(String(exercise.sets));
     setEditReps(String(exercise.reps));
-    setEditDay(exercise.day ?? "None");
+    setEditEmoji(exercise.emoji ?? "💪");
+    setShowEmojiPicker(false);
     editSheetRef.current?.present();
   };
 
@@ -215,7 +213,7 @@ export default function ExerciseDetail() {
         name: editName.trim(),
         sets: setsNum,
         reps: repsNum,
-        day: editDay,
+        emoji: editEmoji,
       });
       editSheetRef.current?.dismiss(); // ← was incorrectly .present() before
       await fetchExercise();
@@ -354,7 +352,7 @@ export default function ExerciseDetail() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#1A1714" />
+          <ActivityIndicator size="large" color="#FFD944" />
         </View>
       </SafeAreaView>
     );
@@ -393,7 +391,7 @@ export default function ExerciseDetail() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F7F5F2" />
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
 
       <ScrollView
         style={styles.scroll}
@@ -417,7 +415,7 @@ export default function ExerciseDetail() {
         <View style={styles.heroCard}>
           <View style={styles.cardAccent} />
           <View style={styles.heroIconBox}>
-            <Text style={styles.heroIcon}>💪</Text>
+            <Text style={styles.heroIcon}>{exercise.emoji ?? "💪"}</Text>
           </View>
           <Text style={styles.heroName}>{exercise.name}</Text>
           <View style={styles.heroMetaRow}>
@@ -427,9 +425,9 @@ export default function ExerciseDetail() {
             <View style={styles.metaPill}>
               <Text style={styles.metaPillText}>{exercise.reps} reps</Text>
             </View>
-            <View style={[styles.metaPill, styles.metaPillDay]}>
-              <Text style={[styles.metaPillText, styles.metaPillDayText]}>
-                📅 {DAY_LABELS[exercise.day ?? "None"]}
+            <View style={styles.metaPill}>
+              <Text style={styles.metaPillText}>
+                📅 {exercise.days?.join(" · ") || "Unscheduled"}
               </Text>
             </View>
           </View>
@@ -515,16 +513,16 @@ export default function ExerciseDetail() {
               height={200}
               yAxisSuffix={` ${unit}`}
               chartConfig={{
-                backgroundColor: "#FFFFFF",
-                backgroundGradientFrom: "#FFFFFF",
-                backgroundGradientTo: "#FFFFFF",
+                backgroundColor: "#111111",
+                backgroundGradientFrom: "#111111",
+                backgroundGradientTo: "#111111",
                 decimalPlaces: 0,
-                color: () => "#1A1714",
-                labelColor: () => "#9E9890",
+                color: () => "#FFD944",
+                labelColor: () => "#555555",
                 style: { borderRadius: 12 },
-                propsForDots: { r: "5", strokeWidth: "2", stroke: "#F7F5F2" },
+                propsForDots: { r: "5", strokeWidth: "2", stroke: "#FFD944" },
                 propsForBackgroundLines: {
-                  stroke: "#ECE8E3",
+                  stroke: "#222222",
                   strokeDasharray: "4",
                 },
               }}
@@ -679,7 +677,7 @@ export default function ExerciseDetail() {
                   ? String(toDisplay(lastSession.sets[i].weight))
                   : "0"
               }
-              placeholderTextColor="#C4BFB8"
+              placeholderTextColor="#555555"
               keyboardType="decimal-pad"
             />
             <TextInput
@@ -687,7 +685,7 @@ export default function ExerciseDetail() {
               value={row.reps}
               onChangeText={(v) => updateSetInput(i, "reps", v)}
               placeholder={String(exercise.reps)}
-              placeholderTextColor="#C4BFB8"
+              placeholderTextColor="#555555"
               keyboardType="number-pad"
             />
           </View>
@@ -723,9 +721,75 @@ export default function ExerciseDetail() {
       </AppBottomSheet>
 
       {/* ── Edit Exercise Sheet ── */}
-      <AppBottomSheet sheetRef={editSheetRef} snapPoints={["75%"]}>
+      <AppBottomSheet sheetRef={editSheetRef} snapPoints={["85%"]} scrollable>
         <View style={{ paddingHorizontal: 24, paddingBottom: 32 }}>
           <Text style={styles.modalTitle}>Edit Exercise</Text>
+
+          {/* Emoji picker */}
+          <TouchableOpacity
+            onPress={() => setShowEmojiPicker((p) => !p)}
+            activeOpacity={0.8}
+          >
+            <View
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: 18,
+                backgroundColor: "#000000",
+                justifyContent: "center",
+                alignItems: "center",
+                alignSelf: "center",
+                borderWidth: 1.5,
+                borderColor: showEmojiPicker ? "#FFD944" : "#222222",
+                marginBottom: 4,
+                marginTop: 8,
+              }}
+            >
+              <Text style={{ fontSize: 30 }}>{editEmoji}</Text>
+            </View>
+            <Text
+              style={{
+                textAlign: "center",
+                fontSize: 11,
+                color: "#555555",
+                marginBottom: 12,
+              }}
+            >
+              Tap to change icon
+            </Text>
+          </TouchableOpacity>
+
+          {showEmojiPicker && (
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: 8,
+                marginBottom: 16,
+              }}
+            >
+              {EXERCISE_EMOJIS.map((emoji) => (
+                <TouchableOpacity
+                  key={emoji}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    backgroundColor: editEmoji === emoji ? "#FFD944" : "#000000",
+                    borderRadius: 12,
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                  onPress={() => {
+                    setEditEmoji(emoji);
+                    setShowEmojiPicker(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ fontSize: 22 }}>{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           <Text style={styles.fieldLabel}>EXERCISE NAME</Text>
           <TextInput
@@ -734,7 +798,7 @@ export default function ExerciseDetail() {
             onFocus={() => setEditNameFocused(true)}
             onBlur={() => setEditNameFocused(false)}
             placeholder="e.g. Bench Press"
-            placeholderTextColor="#C4BFB8"
+            placeholderTextColor="#555555"
             style={[styles.input, editNameFocused && styles.inputFocused]}
           />
 
@@ -747,7 +811,7 @@ export default function ExerciseDetail() {
                 onFocus={() => setEditSetsFocused(true)}
                 onBlur={() => setEditSetsFocused(false)}
                 placeholder="3"
-                placeholderTextColor="#C4BFB8"
+                placeholderTextColor="#555555"
                 keyboardType="number-pad"
                 style={[styles.input, editSetsFocused && styles.inputFocused]}
               />
@@ -760,41 +824,12 @@ export default function ExerciseDetail() {
                 onFocus={() => setEditRepsFocused(true)}
                 onBlur={() => setEditRepsFocused(false)}
                 placeholder="8"
-                placeholderTextColor="#C4BFB8"
+                placeholderTextColor="#555555"
                 keyboardType="number-pad"
                 style={[styles.input, editRepsFocused && styles.inputFocused]}
               />
             </View>
           </View>
-
-          <Text style={styles.fieldLabel}>WORKOUT DAY</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.dayScroll}
-            contentContainerStyle={styles.dayScrollContent}
-          >
-            {ALL_DAYS.map((day) => (
-              <TouchableOpacity
-                key={day}
-                style={[
-                  styles.dayChip,
-                  editDay === day && styles.dayChipSelected,
-                ]}
-                onPress={() => setEditDay(day)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.dayChipText,
-                    editDay === day && styles.dayChipTextSelected,
-                  ]}
-                >
-                  {day}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
 
           <TouchableOpacity
             style={[styles.confirmBtn, saving && styles.confirmBtnDisabled]}
@@ -845,14 +880,14 @@ export default function ExerciseDetail() {
               style={styles.setInput}
               value={row.weight}
               onChangeText={(v) => updateEditEntryInput(i, "weight", v)}
-              placeholderTextColor="#C4BFB8"
+              placeholderTextColor="#555555"
               keyboardType="decimal-pad"
             />
             <TextInput
               style={styles.setInput}
               value={row.reps}
               onChangeText={(v) => updateEditEntryInput(i, "reps", v)}
-              placeholderTextColor="#C4BFB8"
+              placeholderTextColor="#555555"
               keyboardType="number-pad"
             />
           </View>
@@ -882,7 +917,7 @@ export default function ExerciseDetail() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F7F5F2" },
+  safe: { flex: 1, backgroundColor: "#000000" },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 48 },
   centered: {
@@ -898,36 +933,36 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   backBtn: { paddingVertical: 8, paddingRight: 12 },
-  backBtnText: { fontSize: 15, color: "#1A1714", fontWeight: "600" },
+  backBtnText: { fontSize: 15, color: "#FFD944", fontWeight: "600" },
   editBtn: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#111111",
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 10,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 6,
     elevation: 2,
   },
-  editBtnText: { fontSize: 14, color: "#1A1714", fontWeight: "700" },
+  editBtnText: { fontSize: 14, color: "#FFD944", fontWeight: "700" },
   heroCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#111111",
     borderRadius: 20,
     overflow: "hidden",
     marginBottom: 14,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.07,
     shadowRadius: 12,
     elevation: 4,
   },
-  cardAccent: { height: 4, backgroundColor: "#1A1714" },
+  cardAccent: { height: 4, backgroundColor: "#000000" },
   heroIconBox: {
     width: 64,
     height: 64,
     borderRadius: 20,
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 10,
@@ -938,7 +973,7 @@ const styles = StyleSheet.create({
   heroName: {
     fontSize: 22,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
     textAlign: "center",
     marginBottom: 10,
   },
@@ -951,14 +986,12 @@ const styles = StyleSheet.create({
     paddingBottom: 15,
   },
   metaPill: {
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 5,
   },
-  metaPillDay: { backgroundColor: "#EEF2FF" },
-  metaPillText: { fontSize: 12, fontWeight: "600", color: "#1A1714" },
-  metaPillDayText: { color: "#4338CA" },
+  metaPillText: { fontSize: 12, fontWeight: "600", color: "#FFD944" },
   lastSessionBox: {
     paddingHorizontal: 16,
     paddingBottom: 20,
@@ -968,7 +1001,7 @@ const styles = StyleSheet.create({
   lastSessionLabel: {
     fontSize: 10,
     fontWeight: "600",
-    color: "#9E9890",
+    color: "#555555",
     textTransform: "uppercase",
     letterSpacing: 1.2,
     marginBottom: 8,
@@ -976,7 +1009,7 @@ const styles = StyleSheet.create({
   setsGrid: { flexDirection: "row", gap: 8 },
   setCol: {
     flex: 1,
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 12,
     overflow: "hidden",
   },
@@ -984,44 +1017,44 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     alignItems: "center",
     borderBottomWidth: 1,
-    borderBottomColor: "#EEEBE6",
+    borderBottomColor: "#222222",
   },
   setNum: {
     fontSize: 10,
-    color: "#9E9890",
+    color: "#555555",
     textTransform: "uppercase",
     letterSpacing: 0.8,
     fontWeight: "600",
   },
   setBody: { padding: 8, gap: 6 },
   setStat: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#111111",
     borderRadius: 10,
     padding: 8,
     alignItems: "center",
     borderWidth: 0.5,
-    borderColor: "#EEEBE6",
+    borderColor: "#222222",
   },
-  setVal: { fontSize: 13, fontWeight: "600", color: "#1A1714" },
-  setLbl: { fontSize: 10, color: "#9E9890", marginTop: 2 },
+  setVal: { fontSize: 13, fontWeight: "600", color: "#FFD944" },
+  setLbl: { fontSize: 10, color: "#555555", marginTop: 2 },
   prBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "#FEF9C3",
+    backgroundColor: "#FFD944",
     borderRadius: 12,
     padding: 12,
     marginBottom: 14,
   },
-  prBarLeft: { fontSize: 13, color: "#854D0E", fontWeight: "600" },
-  prBarRight: { fontSize: 15, fontWeight: "700", color: "#854D0E" },
+  prBarLeft: { fontSize: 13, color: "#000000", fontWeight: "600" },
+  prBarRight: { fontSize: 15, fontWeight: "700", color: "#000000" },
   statsRow: {
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#111111",
     borderRadius: 16,
     paddingVertical: 16,
     marginBottom: 14,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
@@ -1031,26 +1064,26 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 17,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
     marginBottom: 3,
   },
   statLabel: {
     fontSize: 10,
-    color: "#9E9890",
+    color: "#555555",
     fontWeight: "500",
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
-  statDivider: { width: 1, backgroundColor: "#EEEBE6", marginVertical: 4 },
+  statDivider: { width: 1, backgroundColor: "#222222", marginVertical: 4 },
   logBtn: {
-    backgroundColor: "#1A1714",
+    backgroundColor: "#FFD944",
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
     marginBottom: 24,
   },
   logBtnText: {
-    color: "#F7F5F2",
+    color: "#000000",
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.3,
@@ -1061,14 +1094,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
   },
-  sectionTitle: { fontSize: 17, fontWeight: "700", color: "#1A1714" },
-  sectionHint: { fontSize: 11, color: "#C4BFB8" },
+  sectionTitle: { fontSize: 17, fontWeight: "700", color: "#FFD944" },
+  sectionHint: { fontSize: 11, color: "#555555" },
   historyCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#111111",
     borderRadius: 16,
     padding: 14,
     marginBottom: 10,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
     shadowRadius: 6,
@@ -1081,52 +1114,52 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   historyTopRight: { flexDirection: "row", alignItems: "center", gap: 10 },
-  historyDate: { fontSize: 14, fontWeight: "600", color: "#1A1714" },
-  historyTime: { fontSize: 11, color: "#9E9890", marginTop: 2 },
+  historyDate: { fontSize: 14, fontWeight: "600", color: "#FFD944" },
+  historyTime: { fontSize: 11, color: "#555555", marginTop: 2 },
   prBadge: {
-    backgroundColor: "#FEF9C3",
+    backgroundColor: "#FFD944",
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  prBadgeText: { fontSize: 11, fontWeight: "700", color: "#854D0E" },
-  dots: { fontSize: 20, color: "#C4BFB8", fontWeight: "700" },
+  prBadgeText: { fontSize: 11, fontWeight: "700", color: "#000000" },
+  dots: { fontSize: 20, color: "#555555", fontWeight: "700" },
   historySetsGrid: { flexDirection: "row", gap: 6 },
   historySetCol: {
     flex: 1,
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 10,
     padding: 8,
     alignItems: "center",
   },
-  historySetColPR: { backgroundColor: "#FEF9C3" },
+  historySetColPR: { backgroundColor: "#FFD944" },
   historySetNum: {
     fontSize: 10,
-    color: "#9E9890",
+    color: "#555555",
     textTransform: "uppercase",
     letterSpacing: 0.5,
     fontWeight: "600",
     marginBottom: 4,
   },
-  historySetNumPR: { color: "#854D0E" },
-  historySetVal: { fontSize: 13, fontWeight: "700", color: "#1A1714" },
-  historySetValPR: { color: "#854D0E" },
-  historySetReps: { fontSize: 11, color: "#9E9890", marginTop: 2 },
-  historySetRepsPR: { color: "#854D0E" },
+  historySetNumPR: { color: "#000000" },
+  historySetVal: { fontSize: 13, fontWeight: "700", color: "#FFD944" },
+  historySetValPR: { color: "#000000" },
+  historySetReps: { fontSize: 11, color: "#555555", marginTop: 2 },
+  historySetRepsPR: { color: "#000000" },
   emptyHistory: { alignItems: "center", paddingVertical: 32, gap: 6 },
   emptyHistoryIcon: { fontSize: 40, marginBottom: 4 },
-  emptyHistoryText: { fontSize: 16, fontWeight: "700", color: "#1A1714" },
-  emptyHistorySubtext: { fontSize: 13, color: "#9E9890", textAlign: "center" },
+  emptyHistoryText: { fontSize: 16, fontWeight: "700", color: "#FFD944" },
+  emptyHistorySubtext: { fontSize: 13, color: "#555555", textAlign: "center" },
   modalTitle: {
     fontSize: 22,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
     marginBottom: 4,
     letterSpacing: -0.3,
   },
   modalSub: {
     fontSize: 13,
-    color: "#9E9890",
+    color: "#555555",
     fontWeight: "500",
     marginBottom: 16,
   },
@@ -1140,7 +1173,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 10,
     fontWeight: "600",
-    color: "#9E9890",
+    color: "#555555",
     textTransform: "uppercase",
     letterSpacing: 1,
     textAlign: "center",
@@ -1154,17 +1187,17 @@ const styles = StyleSheet.create({
   inputSetLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#9E9890",
+    color: "#555555",
     textAlign: "center",
   },
   setInput: {
     flex: 1,
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 10,
     paddingVertical: 12,
     paddingHorizontal: 8,
     fontSize: 15,
-    color: "#1A1714",
+    color: "#FFD944",
     fontWeight: "500",
     textAlign: "center",
     borderWidth: 1.5,
@@ -1180,49 +1213,49 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#9E9890",
+    color: "#555555",
     letterSpacing: 1.2,
     textTransform: "uppercase",
     marginBottom: 8,
     marginTop: 16,
   },
   input: {
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 15,
-    color: "#1A1714",
+    color: "#FFD944",
     fontWeight: "500",
     borderWidth: 1.5,
     borderColor: "transparent",
   },
-  inputFocused: { borderColor: "#1A1714", backgroundColor: "#FFFFFF" },
+  inputFocused: { borderColor: "#FFD944", backgroundColor: "#111111" },
   row: { flexDirection: "row" },
   confirmBtn: {
-    backgroundColor: "#1A1714",
+    backgroundColor: "#FFD944",
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
     marginTop: 20,
   },
-  confirmBtnDisabled: { backgroundColor: "#9E9890" },
+  confirmBtnDisabled: { backgroundColor: "#555555" },
   confirmBtnText: {
-    color: "#F7F5F2",
+    color: "#000000",
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.3,
   },
   cancelBtn: { paddingVertical: 14, alignItems: "center", marginTop: 8 },
-  cancelBtnText: { color: "#9E9890", fontSize: 15, fontWeight: "600" },
-  backLink: { fontSize: 15, color: "#1A1714", fontWeight: "600" },
-  emptyTitle: { fontSize: 18, fontWeight: "700", color: "#1A1714" },
+  cancelBtnText: { color: "#555555", fontSize: 15, fontWeight: "600" },
+  backLink: { fontSize: 15, color: "#FFD944", fontWeight: "600" },
+  emptyTitle: { fontSize: 18, fontWeight: "700", color: "#FFD944" },
   chartCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#111111",
     borderRadius: 20,
     padding: 16,
     marginBottom: 24,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 12,
@@ -1234,28 +1267,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 4,
   },
-  chartTitle: { fontSize: 17, fontWeight: "700", color: "#1A1714" },
-  chartRange: { fontSize: 12, color: "#C4BFB8", fontWeight: "500" },
+  chartTitle: { fontSize: 17, fontWeight: "700", color: "#FFD944" },
+  chartRange: { fontSize: 12, color: "#555555", fontWeight: "500" },
   chartXLabel: {
     fontSize: 10,
     fontWeight: "600",
-    color: "#9E9890",
+    color: "#555555",
     textTransform: "uppercase",
     letterSpacing: 0.8,
     textAlign: "center",
     marginTop: 4,
   },
-  dayScroll: { marginTop: 4 },
-  dayScrollContent: { gap: 8, paddingVertical: 4 },
-  dayChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: "#F7F5F2",
-    borderWidth: 1.5,
-    borderColor: "transparent",
-  },
-  dayChipSelected: { backgroundColor: "#1A1714", borderColor: "#1A1714" },
-  dayChipText: { fontSize: 14, fontWeight: "600", color: "#9E9890" },
-  dayChipTextSelected: { color: "#F7F5F2" },
 });

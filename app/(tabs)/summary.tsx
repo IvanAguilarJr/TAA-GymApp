@@ -1,6 +1,7 @@
 import { auth } from "@/firebase/config";
 import { getExercises } from "@/firebase/exercises";
 import { Exercise, ALL_DAYS, Day } from "@/firebase/types";
+import { getAllNotes, DayNote } from "@/firebase/notes";
 import {
   Text,
   View,
@@ -14,6 +15,7 @@ import { router, useFocusEffect } from "expo-router";
 import { useState, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useWeightUnit } from "../context/WeightUnitContext";
+import { getCurrentStreak, getLongestStreak, getTodayCompletion } from "@/firebase/streaks";
 
 const DAY_LABELS: Record<Day, string> = {
   Mon: "Monday",
@@ -29,14 +31,20 @@ const DAY_LABELS: Record<Day, string> = {
 export default function Summary() {
   const user = auth.currentUser;
   const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [notes, setNotes] = useState<DayNote[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const { format } = useWeightUnit();
 
   const fetchExercises = async () => {
     setLoading(true);
     try {
-      const data = await getExercises(user!.uid);
+      const [data, allNotes] = await Promise.all([
+        getExercises(user!.uid),
+        getAllNotes(user!.uid),
+      ]);
       setExercises(data);
+      setNotes(allNotes);
     } catch (err) {
       //fail silently
     } finally {
@@ -67,16 +75,55 @@ export default function Summary() {
 
   // Schedule breakdown - days that have at least one exercise
   const scheduledDays = ALL_DAYS.filter(
-    (day) => day !== "None" && exercises.some((e) => e.day === day),
+    (day) => day !== "None" && exercises.some((e) => e.days?.includes(day)),
   );
 
   const restDays = ALL_DAYS.filter(
-    (day) => day !== "None" && !exercises.some((e) => e.day === day),
+    (day) => day !== "None" && !exercises.some((e) => e.days?.includes(day)),
   );
+
+  const currentStreak = getCurrentStreak(exercises);
+  const longestStreak = getLongestStreak(exercises);
+  const todayCompletion = getTodayCompletion(exercises);
+
+  const getWeekKey = (date: string) => {
+    const d = new Date(date);
+    const startOfYear = new Date(d.getFullYear(), 0, 1);
+    const week = Math.ceil(
+      ((d.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7,
+    );
+    return `${d.getFullYear()}-W${String(week).padStart(2, "0")}`;
+  };
+
+  const getMonthKey = (date: string) => date.slice(0, 7);
+  const getYearKey = (date: string) => date.slice(0, 4);
+
+  const formatDateLabel = (date: string) =>
+    new Date(date).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+
+  const formatMonthLabel = (key: string) => {
+    const [year, month] = key.split("-");
+    return new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    });
+  };
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F7F5F2" />
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
 
       <ScrollView
         style={styles.scroll}
@@ -91,7 +138,7 @@ export default function Summary() {
 
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#1A1714" />
+            <ActivityIndicator size="large" color="#FFD944" />
           </View>
         ) : (
           <>
@@ -116,6 +163,110 @@ export default function Summary() {
                 <Text style={styles.statCardLabel}>Heaviest Lift</Text>
               </View>
             </View>
+
+            {/* ── Streak ── */}
+            <View style={styles.card}>
+              <View style={styles.cardAccent} />
+              <Text style={styles.cardTitle}>🔥 Streak</Text>
+              <View style={styles.streakRow}>
+                <View style={styles.streakStat}>
+                  <Text style={styles.streakStatValue}>{currentStreak}</Text>
+                  <Text style={styles.streakStatLabel}>day streak</Text>
+                </View>
+                <View style={styles.streakStatDivider} />
+                <View style={styles.streakStat}>
+                  <Text style={styles.streakStatValue}>{longestStreak}</Text>
+                  <Text style={styles.streakStatLabel}>personal best</Text>
+                </View>
+                <View style={styles.streakStatDivider} />
+                <View style={styles.streakStat}>
+                  <Text style={styles.streakStatValue}>{todayCompletion.percentage}%</Text>
+                  <Text style={styles.streakStatLabel}>today's completion</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* ── Notes ── */}
+            {notes.length > 0 && (
+              <View style={styles.card}>
+                <View style={styles.cardAccent} />
+                <Text style={styles.cardTitle}>📝 Notes</Text>
+
+                {(() => {
+                  const byYear: Record<string, Record<string, Record<string, DayNote[]>>> = {};
+                  notes.forEach((note) => {
+                    const y = getYearKey(note.date);
+                    const m = getMonthKey(note.date);
+                    const w = getWeekKey(note.date);
+                    if (!byYear[y]) byYear[y] = {};
+                    if (!byYear[y][m]) byYear[y][m] = {};
+                    if (!byYear[y][m][w]) byYear[y][m][w] = [];
+                    byYear[y][m][w].push(note);
+                  });
+
+                  return Object.entries(byYear).map(([year, months]) => (
+                    <View key={year}>
+                      <TouchableOpacity
+                        style={styles.noteGroupHeader}
+                        onPress={() => toggleGroup(year)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.noteGroupTitle}>{year}</Text>
+                        <Text style={styles.noteGroupChevron}>
+                          {expandedGroups.has(year) ? "▾" : "▸"}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {expandedGroups.has(year) &&
+                        Object.entries(months).map(([monthKey, weeks]) => (
+                          <View key={monthKey} style={styles.noteMonthBlock}>
+                            <TouchableOpacity
+                              style={styles.noteMonthHeader}
+                              onPress={() => toggleGroup(monthKey)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.noteMonthTitle}>
+                                {formatMonthLabel(monthKey)}
+                              </Text>
+                              <Text style={styles.noteGroupChevron}>
+                                {expandedGroups.has(monthKey) ? "▾" : "▸"}
+                              </Text>
+                            </TouchableOpacity>
+
+                            {expandedGroups.has(monthKey) &&
+                              Object.entries(weeks).map(([weekKey, dayNotes]) => (
+                                <View key={weekKey} style={styles.noteWeekBlock}>
+                                  <TouchableOpacity
+                                    style={styles.noteWeekHeader}
+                                    onPress={() => toggleGroup(weekKey)}
+                                    activeOpacity={0.7}
+                                  >
+                                    <Text style={styles.noteWeekTitle}>
+                                      {weekKey.replace("-", " · ")}
+                                    </Text>
+                                    <Text style={styles.noteGroupChevron}>
+                                      {expandedGroups.has(weekKey) ? "▾" : "▸"}
+                                    </Text>
+                                  </TouchableOpacity>
+
+                                  {expandedGroups.has(weekKey) &&
+                                    dayNotes.map((note) => (
+                                      <View key={note.date} style={styles.noteDayCard}>
+                                        <Text style={styles.noteDayDate}>
+                                          {formatDateLabel(note.date)}
+                                        </Text>
+                                        <Text style={styles.noteDayText}>{note.text}</Text>
+                                      </View>
+                                    ))}
+                                </View>
+                              ))}
+                          </View>
+                        ))}
+                    </View>
+                  ));
+                })()}
+              </View>
+            )}
 
             {/* ── Top PRs ── */}
             <View style={styles.card}>
@@ -154,7 +305,7 @@ export default function Summary() {
                       <Text style={styles.prName}>{exercise.name}</Text>
                       <Text style={styles.prMeta}>
                         {exercise.sets} sets · {exercise.reps} reps ·{" "}
-                        {DAY_LABELS[exercise.day ?? "None"]}
+                        {exercise.days?.join(", ") || "Unscheduled"}
                       </Text>
                     </View>
                     <View style={styles.prBadge}>
@@ -186,7 +337,7 @@ export default function Summary() {
                       <Text style={styles.scheduleSubtitle}>TRAINING</Text>
                       {scheduledDays.map((day, index) => {
                         const count = exercises.filter(
-                          (e) => e.day === day,
+                          (e) => e.days?.includes(day),
                         ).length;
                         return (
                           <View
@@ -263,7 +414,7 @@ export default function Summary() {
                       <View>
                         <Text style={styles.exerciseName}>{exercise.name}</Text>
                         <Text style={styles.exerciseMeta}>
-                          {DAY_LABELS[exercise.day ?? "None"]}
+                          {exercise.days?.join(", ") || "Unscheduled"}
                         </Text>
                       </View>
                     </View>
@@ -282,14 +433,14 @@ export default function Summary() {
         )}
 
         <View style={{ height: 24 }} />
-        <Text style={styles.footer}>TAA • {new Date().getFullYear()}</Text>
+        <Text style={styles.footer}>QINETIC • {new Date().getFullYear()}</Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F7F5F2" },
+  safe: { flex: 1, backgroundColor: "#000000" },
   scroll: { flex: 1 },
   container: {
     paddingHorizontal: 24,
@@ -302,12 +453,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 26,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
     letterSpacing: -0.5,
   },
   headerSub: {
     fontSize: 13,
-    color: "#9E9890",
+    color: "#555555",
     fontWeight: "500",
     marginTop: 2,
   },
@@ -323,10 +474,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   statCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#111111",
     borderRadius: 16,
     padding: 18,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
@@ -339,13 +490,13 @@ const styles = StyleSheet.create({
   statCardValue: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
     marginBottom: 4,
     letterSpacing: -0.5,
   },
   statCardLabel: {
     fontSize: 11,
-    color: "#9E9890",
+    color: "#555555",
     fontWeight: "600",
     letterSpacing: 0.5,
     textTransform: "uppercase",
@@ -354,11 +505,11 @@ const styles = StyleSheet.create({
 
   // Card
   card: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#111111",
     borderRadius: 20,
     padding: 20,
     marginBottom: 16,
-    shadowColor: "#1A1714",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.07,
     shadowRadius: 12,
@@ -371,14 +522,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 4,
-    backgroundColor: "#1A1714",
+    backgroundColor: "#000000",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
   },
   cardTitle: {
     fontSize: 17,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
     marginBottom: 12,
     marginTop: 4,
   },
@@ -392,7 +543,7 @@ const styles = StyleSheet.create({
   seeAllText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#9E9890",
+    color: "#555555",
   },
 
   // Empty section
@@ -404,12 +555,12 @@ const styles = StyleSheet.create({
   emptySectionIcon: { fontSize: 32 },
   emptySectionText: {
     fontSize: 14,
-    color: "#9E9890",
+    color: "#555555",
     textAlign: "center",
     fontWeight: "500",
   },
   linkBtn: {
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 12,
     paddingHorizontal: 20,
     paddingVertical: 10,
@@ -418,7 +569,7 @@ const styles = StyleSheet.create({
   linkBtnText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
   },
 
   // PR rows
@@ -430,42 +581,42 @@ const styles = StyleSheet.create({
   },
   prRowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: "#EEEBE6",
+    borderBottomColor: "#222222",
   },
   prRank: {
     width: 32,
     height: 32,
     borderRadius: 10,
-    backgroundColor: "#FEF9C3",
+    backgroundColor: "#FFD944",
     justifyContent: "center",
     alignItems: "center",
   },
   prRankText: {
     fontSize: 12,
     fontWeight: "800",
-    color: "#854D0E",
+    color: "#000000",
   },
   prLeft: { flex: 1 },
   prName: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
     marginBottom: 2,
   },
-  prMeta: { fontSize: 12, color: "#9E9890", fontWeight: "500" },
+  prMeta: { fontSize: 12, color: "#555555", fontWeight: "500" },
   prBadge: {
-    backgroundColor: "#FEF9C3",
+    backgroundColor: "#FFD944",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 10,
   },
-  prBadgeText: { fontSize: 13, fontWeight: "700", color: "#854D0E" },
+  prBadgeText: { fontSize: 13, fontWeight: "700", color: "#000000" },
 
   // Schedule
   scheduleSubtitle: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#9E9890",
+    color: "#555555",
     letterSpacing: 1.5,
     marginBottom: 8,
   },
@@ -477,7 +628,7 @@ const styles = StyleSheet.create({
   },
   scheduleRowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: "#EEEBE6",
+    borderBottomColor: "#222222",
   },
   scheduleLeft: {
     flexDirection: "row",
@@ -493,11 +644,11 @@ const styles = StyleSheet.create({
   scheduleDayText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#1A1714",
+    color: "#FFD944",
   },
   scheduleCount: {
     fontSize: 13,
-    color: "#9E9890",
+    color: "#555555",
     fontWeight: "500",
   },
   restDaysRow: {
@@ -506,7 +657,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   restDayChip: {
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -514,7 +665,7 @@ const styles = StyleSheet.create({
   restDayChipText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#9E9890",
+    color: "#555555",
   },
 
   // All exercises list
@@ -526,7 +677,7 @@ const styles = StyleSheet.create({
   },
   exerciseRowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: "#EEEBE6",
+    borderBottomColor: "#222222",
   },
   exerciseLeft: {
     flexDirection: "row",
@@ -538,7 +689,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: "#F7F5F2",
+    backgroundColor: "#000000",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -546,23 +697,92 @@ const styles = StyleSheet.create({
   exerciseName: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#1A1714",
+    color: "#FFD944",
     marginBottom: 2,
   },
-  exerciseMeta: { fontSize: 12, color: "#9E9890", fontWeight: "500" },
+  exerciseMeta: { fontSize: 12, color: "#555555", fontWeight: "500" },
   prBadgeSmall: {
-    backgroundColor: "#FEF9C3",
+    backgroundColor: "#FFD944",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
-  prBadgeSmallText: { fontSize: 11, fontWeight: "700", color: "#854D0E" },
+  prBadgeSmallText: { fontSize: 11, fontWeight: "700", color: "#000000" },
 
   footer: {
     textAlign: "center",
     fontSize: 11,
-    color: "#C4BFB8",
+    color: "#555555",
     letterSpacing: 1,
     fontWeight: "500",
   },
+
+  // Streak card
+  streakRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 4,
+  },
+  streakStat: {
+    flex: 1,
+    alignItems: "center",
+  },
+  streakStatValue: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: "#FFD944",
+    marginBottom: 4,
+    letterSpacing: -0.5,
+  },
+  streakStatLabel: {
+    fontSize: 11,
+    color: "#555555",
+    fontWeight: "600",
+    letterSpacing: 0.3,
+    textAlign: "center",
+  },
+  streakStatDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: "#222222",
+  },
+
+  // Notes
+  noteGroupHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#222222",
+  },
+  noteGroupTitle: { fontSize: 15, fontWeight: "700", color: "#FFD944" },
+  noteGroupChevron: { fontSize: 13, color: "#555555" },
+  noteMonthBlock: { marginLeft: 8, marginTop: 4 },
+  noteMonthHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  noteMonthTitle: { fontSize: 13, fontWeight: "600", color: "#FFD944" },
+  noteWeekBlock: { marginLeft: 8 },
+  noteWeekHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  noteWeekTitle: { fontSize: 11, fontWeight: "600", color: "#555555", letterSpacing: 0.5 },
+  noteDayCard: {
+    backgroundColor: "#000000",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    marginLeft: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: "#FFD944",
+  },
+  noteDayDate: { fontSize: 11, fontWeight: "700", color: "#555555", marginBottom: 4 },
+  noteDayText: { fontSize: 13, color: "#FFD944", lineHeight: 18, fontWeight: "400" },
 });
