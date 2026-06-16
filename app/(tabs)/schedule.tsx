@@ -13,8 +13,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { getExercises, updateExerciseDays } from "@/supabase/exercises";
-import { Exercise, Day } from "@/firebase/types";
+import { Exercise, Day } from "@/lib/types";
 import { useFocusEffect } from "expo-router";
+import { useWeightUnit } from "@/app/context/WeightUnitContext";
 
 const TRAINING_DAYS: Day[] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MUSCLE_FILTERS = [
@@ -34,6 +35,8 @@ export default function Schedule() {
   const [animatingId, setAnimatingId] = useState<string | null>(null);
   const [dayNames, setDayNames] = useState<Record<string, string>>({});
   const [restDays, setRestDays] = useState<Set<Day>>(new Set());
+
+  const { format } = useWeightUnit();
 
   const cardAnims = useRef<Record<string, CardAnim>>({});
 
@@ -251,7 +254,7 @@ export default function Schedule() {
             </View>
             {exercise.maxWeight > 0 && (
               <Text style={{ fontSize: 9, color: "#555555", marginTop: 5 }}>
-                PR: {exercise.maxWeight}kg · {exercise.sets}×{exercise.reps}
+                PR: {format(exercise.maxWeight)} · {exercise.sets}×{exercise.reps}
               </Text>
             )}
           </View>

@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import type { Session } from "@supabase/supabase-js";
 import { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { configureGoogleSignIn } from "@/firebase/googleAuth";
+import { configureGoogleSignIn } from "@/lib/googleAuth";
 import { WeightUnitProvider } from "@/app/context/WeightUnitContext";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 

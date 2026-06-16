@@ -15,7 +15,7 @@ import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { signOut } from "@/firebase/googleAuth";
+import { signOut } from "@/lib/googleAuth";
 import { router } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import {

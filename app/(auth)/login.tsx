@@ -15,7 +15,7 @@ import {
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Link, useRouter } from "expo-router";
-import { signInWithGoogle } from "@/firebase/googleAuth";
+import { signInWithGoogle } from "@/lib/googleAuth";
 
 export default function Login() {
   const [email, setEmail] = useState("");

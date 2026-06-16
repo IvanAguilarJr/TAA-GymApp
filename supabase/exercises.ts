@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { Exercise, WeightEntry, SetEntry, Day } from "@/firebase/types";
+import { Exercise, WeightEntry, SetEntry, Day } from "@/lib/types";
 
 export const MAX_SETS = 4;
 export const MAX_WEIGHT_KG = 1000;

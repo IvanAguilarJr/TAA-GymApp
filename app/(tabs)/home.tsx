@@ -1,10 +1,10 @@
 import { Image } from "expo-image";
 import { supabase } from "@/lib/supabase";
 import { getExercisesByDay, getExercises } from "@/supabase/exercises";
-import { getCurrentStreak, getTodayCompletion } from "@/firebase/streaks";
+import { getCurrentStreak, getTodayCompletion } from "@/lib/streaks";
 import { getDayNote, saveDayNote } from "@/supabase/notes";
 import { DayNote } from "@/supabase/notes";
-import { Exercise, DAY_MAP, Day } from "@/firebase/types";
+import { Exercise, DAY_MAP, Day } from "@/lib/types";
 import {
   Text,
   View,

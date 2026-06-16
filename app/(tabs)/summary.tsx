@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { getExercises } from "@/supabase/exercises";
-import { Exercise, ALL_DAYS, Day } from "@/firebase/types";
+import { Exercise, ALL_DAYS, Day } from "@/lib/types";
 import { getAllNotes, DayNote } from "@/supabase/notes";
 import {
   Text,
@@ -15,7 +15,7 @@ import { router, useFocusEffect } from "expo-router";
 import { useState, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useWeightUnit } from "../context/WeightUnitContext";
-import { getCurrentStreak, getLongestStreak, getTodayCompletion } from "@/firebase/streaks";
+import { getCurrentStreak, getLongestStreak, getTodayCompletion } from "@/lib/streaks";
 
 const DAY_LABELS: Record<Day, string> = {
   Mon: "Monday",

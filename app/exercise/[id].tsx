@@ -23,7 +23,7 @@ import {
   MAX_SETS,
   MAX_WEIGHT_KG,
 } from "@/supabase/exercises";
-import { Exercise, SetEntry } from "@/firebase/types";
+import { Exercise, SetEntry } from "@/lib/types";
 
 const EXERCISE_EMOJIS = [
   "💪","🏋️","🦵","🔝","🙌","📐","🦿","💀","🏃","🚴",

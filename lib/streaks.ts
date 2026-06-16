@@ -1,4 +1,4 @@
-import { Exercise, DAY_MAP, Day } from "@/firebase/types";
+import { Exercise, DAY_MAP, Day } from "@/lib/types";
 
 function dateStr(d: Date): string {
   return d.toISOString().split("T")[0];

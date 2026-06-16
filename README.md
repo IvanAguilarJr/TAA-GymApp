@@ -1,4 +1,4 @@
-# TAA — Training Activity App
+# QINETIC — Training Activity App
 
 A personal gym tracking app built with React Native and Expo. Log your workouts, track your progress, and beat your personal records.
 
@@ -9,25 +9,26 @@ A personal gym tracking app built with React Native and Expo. Log your workouts,
 - **Personal Records** — Automatically tracks your best lift per exercise
 - **Progress Chart** — Visual weight progression across sessions
 - **Weekly Schedule** — Assign exercises to specific days of the week
-- **Drag to Reorder** — Long press to reorder exercises within a day
-- **Move Day** — Swipe left on any exercise to move it to a different day
 - **Session History** — Full log of every session with per-set breakdown
 - **Edit & Delete** — Long press any history entry to correct or remove it
 - **Rest Day Detection** — Shows a motivational message when no exercises are scheduled
-- **Summary Tab** — Overview of total sessions, PRs, and weekly schedule
-- **Settings** — Edit display name, weight unit (kg/lbs), email, and password
-- **Google Sign-In** — OAuth via `@react-native-google-signin/google-signin`
-- **Unified Sign-Out** — Signs out of both Firebase and Google simultaneously
+- **Streak Tracking** — Consecutive training days based on scheduled completion
+- **Notes** — Add a daily workout note, viewable in the Summary tab
+- **Summary Tab** — Overview of total sessions, PRs, weekly schedule, and notes
+- **Settings** — Edit display name, weight unit (kg/lbs), profile photo, email, and password
+- **Google Sign-In** — OAuth via `@react-native-google-signin/google-signin` + Supabase
+- **Account Deletion** — Full data wipe via a Supabase Edge Function
 
 ## Tech Stack
 
 - **Framework** — React Native + Expo Router
 - **Language** — TypeScript
-- **Auth** — Firebase Authentication (email/password + Google OAuth)
-- **Database** — Cloud Firestore
+- **Auth** — Supabase Auth (email/password + Google OAuth via native ID-token exchange)
+- **Database** — Supabase (PostgreSQL)
+- **Storage** — Supabase Storage (private `profile-pictures` bucket)
+- **Server Logic** — Supabase Edge Functions (account deletion)
 - **Animations** — React Native Reanimated
 - **Gestures** — React Native Gesture Handler
-- **Drag & Drop** — React Native Draggable FlatList
 - **Charts** — React Native Chart Kit
 
 ## Project Structure
@@ -35,23 +36,33 @@ A personal gym tracking app built with React Native and Expo. Log your workouts,
 ```
 app/
 ├── (auth)/
-│   ├── login.tsx
-│   └── signup.tsx
+│   ├── login.tsx          # Email/password + Google Sign-In
+│   ├── signup.tsx         # Email/password registration
+│   └── verify-email.tsx   # Post-signup email verification
 ├── (tabs)/
-│   ├── home.tsx          # Today's workout
-│   ├── exercises.tsx     # All exercises grouped by day
-│   └── summary.tsx       # Stats and PR overview
+│   ├── home.tsx           # Today's workout + streak + notes
+│   ├── exercises.tsx      # All exercises grid
+│   ├── schedule.tsx       # Weekly schedule builder
+│   └── summary.tsx        # Stats, PRs, notes, and schedule overview
 ├── exercise/
-│   └── [id].tsx          # Exercise detail, logging, history
-├── settings.tsx          # Profile, account, and danger zone
-├── _layout.tsx
-└── index.tsx
-firebase/
-├── config.ts
-├── types.ts
-├── exercises.ts
-├── profile.ts            # User profile CRUD
-└── googleAuth.ts         # Google Sign-In + unified sign-out
+│   └── [id].tsx           # Exercise detail, logging, history, chart
+├── context/
+│   └── WeightUnitContext.tsx  # kg/lbs conversion context (reads from profiles table)
+├── settings.tsx           # Profile, account, and danger zone
+└── _layout.tsx            # Session-gated routing via supabase.auth.onAuthStateChange
+lib/
+├── supabase.ts            # Supabase client (AsyncStorage persistence)
+├── types.ts               # Shared TypeScript types (Exercise, Day, SetEntry, WeightEntry)
+├── streaks.ts             # Streak calculation logic (pure TS, no server calls)
+└── googleAuth.ts          # Google Sign-In adapter (native SDK → Supabase ID-token exchange)
+supabase/
+├── exercises.ts           # Exercise CRUD + session logging against Supabase
+├── notes.ts               # Daily notes upsert/fetch
+├── profile.ts             # User profile read/write (profiles table)
+├── storage.ts             # Profile photo upload → signed URL
+└── functions/
+    └── delete-account/
+        └── index.ts       # Edge Function: JWT verify → storage delete → admin.deleteUser (cascades DB)
 ```
 
 ## Getting Started
@@ -60,8 +71,8 @@ firebase/
 
 - Node.js >= 20.19.4
 - Expo CLI
-- A Firebase project with Authentication and Firestore enabled
-- Google OAuth credentials (Web Client ID + iOS Client ID)
+- A Supabase project with the schema from `supabase_schema.sql`
+- Google OAuth credentials (Web Client ID + iOS Client ID) configured in Supabase Auth → Providers → Google
 
 ### Installation
 
@@ -76,40 +87,38 @@ npm install
 Create a `.env` file in the root of the project:
 
 ```
-# Firebase
-EXPO_PUBLIC_FIREBASE_API_KEY=your_api_key
-EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_auth_domain
-EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
-EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_storage_bucket
-EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
-EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
-EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=your_measurement_id
-
-# Google OAuth
+# Google Sign-In iOS
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=your_web_client_id
 EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=your_ios_client_id
+EXPO_PUBLIC_GOOGLE_IOS_REVERSED_CLIENT_ID=com.googleusercontent.apps.<your_ios_client_id_without_prefix>
+
+# Supabase
+EXPO_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 ```
 
-**Where to find the Google OAuth credentials:**
+**Where to find credentials:**
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
-2. **Web Client ID** — the OAuth 2.0 client of type "Web application" (also shown in Firebase Console → Authentication → Sign-in method → Google)
-3. **iOS Client ID** — the OAuth 2.0 client of type "iOS" created for your bundle ID
+1. **Supabase URL + Anon Key** — Supabase Dashboard → Project Settings → API
+2. **Google Web Client ID** — Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client (type: Web)
+3. **Google iOS Client ID** — same page, OAuth 2.0 Client (type: iOS, for your bundle ID)
+4. Enable Google as a provider in Supabase Dashboard → Authentication → Providers → Google, and paste the Web Client ID + Secret there
 
-### Firestore Security Rules
+### Database Setup
 
-In your Firebase Console → Firestore → Rules, paste:
+Run `supabase_schema.sql` against your Supabase project:
 
+```bash
+supabase db push   # or paste into the Supabase SQL editor
 ```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-  }
-}
-```
+
+The schema creates:
+- `profiles` — auto-created via trigger on `auth.users` INSERT
+- `exercises` — per-user exercise definitions with schedule days and max weight
+- `set_entries` — individual logged sets; grouped by `logged_at` timestamp into sessions
+- `notes` — one note per user per date (UNIQUE constraint)
+
+Row Level Security is enabled on all tables. All deletes cascade from `auth.users`.
 
 ### Running the App
 
@@ -127,52 +136,28 @@ npx expo run:ios
 
 ## Data Model
 
+### Supabase schema (simplified)
+
 ```
-users/
-└── {userId}/
-    ├── profile/
-    │   └── settings/
-    │       ├── displayName: string
-    │       ├── photoURL: string | null
-    │       ├── weightUnit: "kg" | "lbs"
-    │       ├── createdAt: number (Unix ms)
-    │       └── updatedAt: number (Unix ms)
-    └── exercises/
-        └── {exerciseId}/
-            ├── name: string
-            ├── sets: number
-            ├── reps: number
-            ├── day: "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun" | "None"
-            ├── order: number
-            ├── maxWeight: number
-            ├── createdAt: string (ISO)
-            └── history: [
-                  {
-                    date: string (ISO),
-                    sets: [
-                      { setNumber: number, weight: number, reps: number }
-                    ]
-                  }
-                ]
+profiles          (id FK→auth.users, display_name, photo_url, weight_unit)
+exercises         (id, user_id FK, name, target_sets, target_reps, max_weight, days[], order, muscle_tag, type_tag, emoji)
+set_entries       (id, exercise_id FK→exercises, set_number, weight, reps, logged_at)
+notes             (id, user_id FK, date, text, UNIQUE(user_id, date))
 ```
 
-### Profile model notes
-
-- Created automatically on first sign-up (email) or first Google login
-- `weightUnit` defaults to `"kg"` and is editable in Settings
-- `photoURL` is stored but currently unused in the UI (reserved for future avatar support)
-- Google sign-in bootstraps the profile from the Google account's `displayName`; email sign-up uses the name entered at registration
+Sessions are implicit: all `set_entries` sharing the same `logged_at` timestamp belong to one session.
 
 ## Auth Flows
 
-| Flow                        | Profile created? | How                                                                             |
-| --------------------------- | ---------------- | ------------------------------------------------------------------------------- |
-| Email sign-up               | Yes              | `createUserProfile(uid, displayName)` called immediately after account creation |
-| Email sign-in               | No               | Profile already exists from sign-up                                             |
-| Google sign-in (first time) | Yes              | Bootstrapped from Google account data if `profile/settings` doesn't exist       |
-| Google sign-in (returning)  | No               | Profile exists, skipped                                                         |
-
-Sign-out calls both `firebaseSignOut` and `GoogleSignin.signOut()` together, so the Google account picker appears fresh on the next login.
+| Flow | What happens |
+|---|---|
+| Email sign-up | `supabase.auth.signUp` → confirmation email sent → user lands on verify-email screen |
+| Email confirmation | User clicks link in email → account active → directed to sign in |
+| Email sign-in | `supabase.auth.signInWithPassword` → `onAuthStateChange` flips layout to tabs |
+| Unconfirmed sign-in | Error contains "email not confirmed" → routed to verify-email with resend option |
+| Google sign-in | Native Google Sign-In → ID token exchanged with `supabase.auth.signInWithIdToken` |
+| Sign-out | `supabase.auth.signOut()` + `GoogleSignin.signOut()` → `onAuthStateChange(null)` → back to login |
+| Delete account | Edge Function: JWT verify → storage objects deleted → `admin.deleteUser` (DB cascade) → client signs out |
 
 ## License
 

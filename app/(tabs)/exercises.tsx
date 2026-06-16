@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { getExercises, addExercise, deleteExercise } from "@/supabase/exercises";
-import { Exercise } from "@/firebase/types";
+import { Exercise } from "@/lib/types";
 import { useRouter, useFocusEffect } from "expo-router";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import AppBottomSheet from "@/components/AppBottomSheet";
