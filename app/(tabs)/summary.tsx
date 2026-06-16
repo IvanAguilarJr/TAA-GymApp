@@ -1,7 +1,7 @@
-import { auth } from "@/firebase/config";
-import { getExercises } from "@/firebase/exercises";
+import { supabase } from "@/lib/supabase";
+import { getExercises } from "@/supabase/exercises";
 import { Exercise, ALL_DAYS, Day } from "@/firebase/types";
-import { getAllNotes, DayNote } from "@/firebase/notes";
+import { getAllNotes, DayNote } from "@/supabase/notes";
 import {
   Text,
   View,
@@ -29,7 +29,6 @@ const DAY_LABELS: Record<Day, string> = {
 };
 
 export default function Summary() {
-  const user = auth.currentUser;
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [notes, setNotes] = useState<DayNote[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -39,9 +38,11 @@ export default function Summary() {
   const fetchExercises = async () => {
     setLoading(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
       const [data, allNotes] = await Promise.all([
-        getExercises(user!.uid),
-        getAllNotes(user!.uid),
+        getExercises(user.id),
+        getAllNotes(user.id),
       ]);
       setExercises(data);
       setNotes(allNotes);

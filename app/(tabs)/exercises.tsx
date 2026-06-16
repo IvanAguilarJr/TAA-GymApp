@@ -12,8 +12,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useCallback, useRef } from "react";
-import { auth } from "@/firebase/config";
-import { getExercises, addExercise, deleteExercise } from "@/firebase/exercises";
+import { supabase } from "@/lib/supabase";
+import { getExercises, addExercise, deleteExercise } from "@/supabase/exercises";
 import { Exercise } from "@/firebase/types";
 import { useRouter, useFocusEffect } from "expo-router";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -43,12 +43,15 @@ export default function Exercises() {
   const [repsFocused, setRepsFocused] = useState(false);
 
   const router = useRouter();
-  const userId = auth.currentUser?.uid ?? "";
+  const [userId, setUserId] = useState("");
 
   const fetchExercises = async () => {
     setLoading(true);
     try {
-      const data = await getExercises(userId);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      if (!userId) setUserId(user.id);
+      const data = await getExercises(user.id);
       setExercises(data);
     } catch (err: any) {
       Alert.alert("Error", err.message);

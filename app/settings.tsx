@@ -8,7 +8,6 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
-  Switch,
   Linking,
 } from "react-native";
 import { Image } from "expo-image";
@@ -16,21 +15,20 @@ import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { updateEmail, updatePassword, sendEmailVerification } from "firebase/auth";
 import { signOut } from "@/firebase/googleAuth";
-import { deleteUserAccount } from "@/firebase/deleteAccount";
 import { router } from "expo-router";
-import { auth } from "@/firebase/config";
+import { supabase } from "@/lib/supabase";
 import {
   getUserProfile,
   updateUserProfile,
   UserProfile,
-} from "@/firebase/profile";
-import { uploadProfilePhoto } from "@/firebase/storage";
+} from "@/supabase/profile";
+import { uploadProfilePhoto } from "@/supabase/storage";
 import { useWeightUnit } from "./context/WeightUnitContext";
 
 export default function Settings() {
-  const user = auth.currentUser;
+  const [userId, setUserId] = useState("");
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,7 +50,11 @@ export default function Settings() {
   const fetchProfile = async () => {
     setLoading(true);
     try {
-      const data = await getUserProfile(user!.uid);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setUserId(user.id);
+      setUserEmail(user.email ?? null);
+      const data = await getUserProfile(user.id);
       if (data) {
         setProfile(data);
         setDisplayName(data.displayName ?? "");
@@ -87,8 +89,8 @@ export default function Settings() {
     const uri = result.assets[0].uri;
     setUploadingPhoto(true);
     try {
-      const url = await uploadProfilePhoto(user!.uid, uri);
-      await updateUserProfile(user!.uid, { photoURL: url });
+      const url = await uploadProfilePhoto(userId, uri);
+      await updateUserProfile(userId, { photoURL: url });
       setProfile((prev) => (prev ? { ...prev, photoURL: url } : prev));
     } catch {
       Alert.alert("Error", "Could not upload photo. Please try again.");
@@ -98,9 +100,8 @@ export default function Settings() {
   };
 
   const getInitials = () => {
-    if (profile?.displayName)
-      return profile.displayName.charAt(0).toUpperCase();
-    if (user?.email) return user.email.charAt(0).toUpperCase();
+    if (profile?.displayName) return profile.displayName.charAt(0).toUpperCase();
+    if (userEmail) return userEmail.charAt(0).toUpperCase();
     return "?";
   };
 
@@ -111,7 +112,7 @@ export default function Settings() {
     }
     setSaving(true);
     try {
-      await updateUserProfile(user!.uid, {
+      await updateUserProfile(userId, {
         displayName: displayName.trim(),
         weightUnit,
       });
@@ -130,11 +131,11 @@ export default function Settings() {
   const handleChangeEmail = async () => {
     if (!newEmail.trim()) return;
     try {
-      await updateEmail(user!, newEmail.trim());
-      await sendEmailVerification(user!);
+      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
+      if (error) throw error;
       Alert.alert(
         "Verification sent",
-        `Verification email sent to ${newEmail.trim()}. Please verify before your new email takes effect.`,
+        `A confirmation link has been sent to ${newEmail.trim()}. Please check your email.`,
       );
       setNewEmail("");
     } catch (e: any) {
@@ -153,7 +154,8 @@ export default function Settings() {
       return;
     }
     try {
-      await updatePassword(user!, newPassword);
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
       Alert.alert("Done", "Password updated successfully.");
       setNewPassword("");
       setConfirmPassword("");
@@ -192,27 +194,18 @@ export default function Settings() {
           onPress: async () => {
             setDeleting(true);
             try {
-              await deleteUserAccount(user!.uid, user!);
+              const { data, error } = await supabase.functions.invoke("delete-account");
+              if (error) throw error;
+              if (!data?.success) throw new Error("Unexpected response from server.");
+              // Clear the local session — the server already deleted the auth record.
+              await supabase.auth.signOut();
               router.replace("/");
             } catch (e: any) {
-              if (e.message === "REAUTH_REQUIRED") {
-                Alert.alert(
-                  "Sign in required",
-                  "For security, please sign out and sign back in before deleting your account.",
-                  [
-                    {
-                      text: "Sign out now",
-                      onPress: async () => {
-                        await signOut();
-                        router.replace("/");
-                      },
-                    },
-                    { text: "Cancel", style: "cancel" },
-                  ],
-                );
-              } else {
-                Alert.alert("Error", "Could not delete account. Please try again.");
-              }
+              // Do NOT sign out — let the user know what failed so they can retry.
+              Alert.alert(
+                "Could not delete account",
+                e?.message ?? "Something went wrong. Please try again.",
+              );
             } finally {
               setDeleting(false);
             }
@@ -282,9 +275,9 @@ export default function Settings() {
           </TouchableOpacity>
           <View>
             <Text style={styles.previewName}>
-              {profile?.displayName || user?.email?.split("@")[0] || "User"}
+              {profile?.displayName || userEmail?.split("@")[0] || "User"}
             </Text>
-            <Text style={styles.previewEmail}>{user?.email}</Text>
+            <Text style={styles.previewEmail}>{userEmail}</Text>
           </View>
         </View>
 
@@ -353,7 +346,7 @@ export default function Settings() {
             style={styles.input}
             value={newEmail}
             onChangeText={setNewEmail}
-            placeholder={user?.email ?? "New email address"}
+            placeholder={userEmail ?? "New email address"}
             placeholderTextColor="#555555"
             keyboardType="email-address"
             autoCapitalize="none"

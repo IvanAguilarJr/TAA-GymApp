@@ -11,7 +11,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ivanjr.TAA",
-      "googleServicesFile": "./ios/TAA/GoogleService-Info_TAA.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "Allow QINETIC to access your photos to set a profile picture."

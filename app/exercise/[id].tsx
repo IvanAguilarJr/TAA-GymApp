@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { useState, useCallback, useRef } from "react";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
-import { auth } from "@/firebase/config";
+import { supabase } from "@/lib/supabase";
 import {
   getExerciseById,
   logSession,
@@ -22,7 +22,7 @@ import {
   MAX_REPS,
   MAX_SETS,
   MAX_WEIGHT_KG,
-} from "@/firebase/exercises";
+} from "@/supabase/exercises";
 import { Exercise, SetEntry } from "@/firebase/types";
 
 const EXERCISE_EMOJIS = [
@@ -45,7 +45,7 @@ type SetInputRow = {
 export default function ExerciseDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const userId = auth.currentUser?.uid ?? "";
+  const [userId, setUserId] = useState("");
 
   const { unit, toDisplay, toStorage, format } = useWeightUnit();
 
@@ -78,7 +78,10 @@ export default function ExerciseDetail() {
   const fetchExercise = async () => {
     setLoading(true);
     try {
-      const found = await getExerciseById(userId, id);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      if (!userId) setUserId(user.id);
+      const found = await getExerciseById(user.id, id);
       if (found) setExercise(found);
     } catch (err: any) {
       Alert.alert("Error", err.message);

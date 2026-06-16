@@ -11,8 +11,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useCallback, useRef } from "react";
-import { auth } from "@/firebase/config";
-import { getExercises, updateExerciseDays } from "@/firebase/exercises";
+import { supabase } from "@/lib/supabase";
+import { getExercises, updateExerciseDays } from "@/supabase/exercises";
 import { Exercise, Day } from "@/firebase/types";
 import { useFocusEffect } from "expo-router";
 
@@ -25,7 +25,7 @@ const MAX_SLOTS = 12;
 type CardAnim = { opacity: Animated.Value; scale: Animated.Value; translateY: Animated.Value };
 
 export default function Schedule() {
-  const userId = auth.currentUser?.uid ?? "";
+  const [userId, setUserId] = useState("");
 
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +51,10 @@ export default function Schedule() {
   const fetchExercises = async () => {
     setLoading(true);
     try {
-      const data = await getExercises(userId);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      if (!userId) setUserId(user.id);
+      const data = await getExercises(user.id);
       setExercises(data);
     } catch {
       // fail silently

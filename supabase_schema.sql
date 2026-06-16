@@ -387,3 +387,12 @@ CREATE POLICY "storage: delete own profile picture"
     bucket_id = 'profile-pictures'
     AND (storage.foldername(name))[1] = auth.uid()::text
   );
+
+-- ── Grants ────────────────────────────────────────────────────────────────────
+-- CREATE TABLE via SQL Editor does NOT auto-grant to Postgres roles.
+-- These grants are required for RLS policies to function correctly.
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON public.profiles    TO anon, authenticated, service_role;
+GRANT ALL ON public.exercises   TO anon, authenticated, service_role;
+GRANT ALL ON public.set_entries TO anon, authenticated, service_role;
+GRANT ALL ON public.notes       TO anon, authenticated, service_role;

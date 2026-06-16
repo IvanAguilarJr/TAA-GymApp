@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   getUserProfile,
   updateWeightUnit as saveWeightUnit,
-} from "@/firebase/profile";
+} from "@/supabase/profile";
 
 type WeightUnit = "kg" | "lbs";
 

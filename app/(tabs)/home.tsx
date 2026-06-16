@@ -1,9 +1,9 @@
 import { Image } from "expo-image";
-import { auth } from "@/firebase/config";
-import { getExercisesByDay, getExercises } from "@/firebase/exercises";
+import { supabase } from "@/lib/supabase";
+import { getExercisesByDay, getExercises } from "@/supabase/exercises";
 import { getCurrentStreak, getTodayCompletion } from "@/firebase/streaks";
-import { getDayNote, saveDayNote } from "@/firebase/notes";
-import { DayNote } from "@/firebase/notes";
+import { getDayNote, saveDayNote } from "@/supabase/notes";
+import { DayNote } from "@/supabase/notes";
 import { Exercise, DAY_MAP, Day } from "@/firebase/types";
 import {
   Text,
@@ -18,7 +18,7 @@ import {
 import { router, useFocusEffect } from "expo-router";
 import { useState, useCallback, useRef } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getUserProfile } from "@/firebase/profile";
+import { getUserProfile } from "@/supabase/profile";
 import { useWeightUnit } from "../context/WeightUnitContext";
 import * as Haptics from "expo-haptics";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -56,7 +56,8 @@ const REST_MESSAGES = [
 const todayStr = new Date().toISOString().split("T")[0];
 
 export default function Home() {
-  const user = auth.currentUser;
+  const [userId, setUserId] = useState("");
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
   const [displayName, setDisplayName] = useState<string | null>(null);
@@ -78,11 +79,16 @@ export default function Home() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      if (!userId) setUserId(user.id);
+      if (!userEmail) setUserEmail(user.email ?? null);
+      const uid = user.id;
       const [data, profile, allExercises, note] = await Promise.all([
-        getExercisesByDay(user!.uid, today),
-        getUserProfile(user!.uid),
-        getExercises(user!.uid),
-        getDayNote(user!.uid, todayStr),
+        getExercisesByDay(uid, today),
+        getUserProfile(uid),
+        getExercises(uid),
+        getDayNote(uid, todayStr),
       ]);
       setExercises(data);
       if (profile?.displayName) setDisplayName(profile.displayName);
@@ -115,7 +121,7 @@ export default function Home() {
     if (!noteText.trim()) return;
     setSavingNote(true);
     try {
-      await saveDayNote(user!.uid, todayStr, noteText.trim());
+      await saveDayNote(userId, todayStr, noteText.trim());
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setTodayNote({
         date: todayStr,
@@ -133,7 +139,7 @@ export default function Home() {
 
   const getInitials = () => {
     if (displayName) return displayName.charAt(0).toUpperCase();
-    if (user?.email) return user.email.charAt(0).toUpperCase();
+    if (userEmail) return userEmail.charAt(0).toUpperCase();
     return "?";
   };
 
@@ -146,7 +152,7 @@ export default function Home() {
 
   const getName = () => {
     if (displayName) return displayName;
-    return user?.email?.split("@")[0] ?? "User";
+    return userEmail?.split("@")[0] ?? "User";
   };
 
   return (
