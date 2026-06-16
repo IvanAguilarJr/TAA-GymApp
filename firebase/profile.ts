@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "@/firebase/config";
 
 export interface UserProfile {
@@ -41,10 +41,7 @@ export async function updateUserProfile(
   updates: Partial<UserProfile>,
 ): Promise<void> {
   const ref = doc(db, "users", userId, "profile", "settings");
-  await updateDoc(ref, {
-    ...updates,
-    updatedAt: Date.now(),
-  });
+  await setDoc(ref, { ...updates, updatedAt: Date.now() }, { merge: true });
 }
 
 export async function updateWeightUnit(
@@ -52,5 +49,5 @@ export async function updateWeightUnit(
   unit: "kg" | "lbs",
 ): Promise<void> {
   const ref = doc(db, "users", userId, "profile", "settings");
-  await updateDoc(ref, { weightUnit: unit });
+  await setDoc(ref, { weightUnit: unit }, { merge: true });
 }

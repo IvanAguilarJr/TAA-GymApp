@@ -13,8 +13,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useState } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/firebase/config";
+import { supabase } from "@/lib/supabase";
 import { Link, useRouter } from "expo-router";
 import { signInWithGoogle } from "@/firebase/googleAuth";
 
@@ -35,7 +34,21 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        if (error.message.toLowerCase().includes("email not confirmed")) {
+          // Route to verify-email with the entered address so the user can resend
+          router.replace({
+            pathname: "/(auth)/verify-email",
+            params: { email },
+          });
+        } else {
+          alert(error.message);
+        }
+        return;
+      }
+      // onAuthStateChange in _layout.tsx will flip to (tabs) automatically;
+      // this replace is the immediate navigation so there is no visible flash.
       router.replace("/(tabs)/home");
     } catch (err: any) {
       alert(err.message);
@@ -144,7 +157,7 @@ export default function Login() {
                 )}
               </TouchableOpacity>
 
-              {/* Apple Sign-In button */}
+              {/* Apple Sign-In button — UI only, not wired up (no Apple Developer account yet) */}
               <TouchableOpacity
                 style={[styles.appleBtn, appleLoading && styles.btnDisabled]}
                 onPress={() => {}}

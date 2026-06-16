@@ -2,18 +2,9 @@ import {
   GoogleSignin,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
+import { supabase } from "@/lib/supabase";
 
-import {
-  GoogleAuthProvider,
-  signInWithCredential,
-  signOut as firebaseSignOut,
-} from "firebase/auth";
-import { auth } from "@/firebase/config";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/firebase/config";
-import { createUserProfile } from "@/firebase/profile";
-
-// Configure Google Sign-In - call this once when app starts
+// Configure Google Sign-In — call once when app starts
 export const configureGoogleSignIn = () => {
   GoogleSignin.configure({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
@@ -21,55 +12,45 @@ export const configureGoogleSignIn = () => {
   });
 };
 
-// Sign in with Google and return Firebase user
+// Sign in with Google via Supabase (native ID-token exchange)
 export const signInWithGoogle = async () => {
   try {
-    // Check if device supports Google Play Services (Android) / Google Sign-In (iOS)
     await GoogleSignin.hasPlayServices();
-
-    // Get Google user info
     const userInfo = await GoogleSignin.signIn();
-
-    // Create Firebase credential from Google token
     const { idToken } = userInfo.data!;
-    const googleCredential = GoogleAuthProvider.credential(idToken);
 
-    // Sign in to Firebase with google credential
-    const result = await signInWithCredential(auth, googleCredential);
-    const user = result.user;
+    if (!idToken) throw new Error("Google Sign-In did not return an ID token");
 
-    // Bootstrap profile on first Google login
-    const profileRef = doc(db, "users", user.uid, "profile", "settings");
-    const profileSnap = await getDoc(profileRef);
+    const { data, error } = await supabase.auth.signInWithIdToken({
+      provider: "google",
+      token: idToken,
+    });
 
-    if (!profileSnap.exists()) {
-      await createUserProfile(user.uid, user.displayName ?? "");
-    }
-
-    return user;
+    if (error) throw error;
+    return data;
   } catch (error: any) {
     if (error.code === statusCodes.SIGN_IN_CANCELLED) {
       throw new Error("Sign in cancelled");
     } else if (error.code === statusCodes.IN_PROGRESS) {
       throw new Error("Sign in already in progress");
     } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-      throw new Error("Google Play Services not avaible");
-    } else {
-      throw error;
+      throw new Error("Google Play Services not available");
     }
+    throw error;
   }
 };
 
-// Sign out from Google (call alongside Firebase signOut)
+// Sign out from the Google native session (not critical if it fails)
 export const signOutFromGoogle = async () => {
   try {
     await GoogleSignin.signOut();
-  } catch (error) {
-    // Silently fail - not critical.
+  } catch {
+    // Silently fail — not critical
   }
 };
 
+// Full sign-out: Supabase session + Google native session
 export const signOut = async (): Promise<void> => {
-  await firebaseSignOut(auth);
+  await supabase.auth.signOut();
   await signOutFromGoogle();
 };

@@ -12,9 +12,7 @@ import {
   TouchableWithoutFeedback,
 } from "react-native";
 import { useState } from "react";
-import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
-import { auth } from "@/firebase/config";
-import { createUserProfile } from "@/firebase/profile";
+import { supabase } from "@/lib/supabase";
 import { Link, useRouter } from "expo-router";
 
 export default function Signup() {
@@ -42,15 +40,14 @@ export default function Signup() {
     }
     setLoading(true);
     try {
-      const { user } = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password,
-      );
-      // Create profile using email prefix as the default display name
-      await createUserProfile(user.uid, email.split("@")[0]);
-      await sendEmailVerification(user);
-      router.replace("/(auth)/verify-email");
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) throw error;
+      // Supabase sends the confirmation email automatically.
+      // A profiles row will be created by the DB trigger once the user is confirmed.
+      router.replace({
+        pathname: "/(auth)/verify-email",
+        params: { email },
+      });
     } catch (err: any) {
       alert(err.message);
     } finally {

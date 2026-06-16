@@ -1,6 +1,6 @@
 import { Stack } from "expo-router";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "@/firebase/config";
+import { supabase } from "@/lib/supabase";
+import type { Session } from "@supabase/supabase-js";
 import { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { configureGoogleSignIn } from "@/firebase/googleAuth";
@@ -11,25 +11,36 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 configureGoogleSignIn();
 
 export default function RootLayout() {
-  const [user, setUser] = useState<any>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setUser(user);
+    // Seed the initial session from AsyncStorage before the listener fires
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
       setLoading(false);
     });
-    return unsub;
+
+    // React to all subsequent auth events (sign-in, sign-out, token refresh)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
+  // Hold the splash/blank screen while the stored session is being read
   if (loading) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <BottomSheetModalProvider>
-        <WeightUnitProvider userId={user?.uid ?? null}>
+        <WeightUnitProvider userId={session?.user?.id ?? null}>
           <Stack screenOptions={{ headerShown: false }}>
-            {user ? (
+            {session ? (
               <>
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="exercise/[id]" />

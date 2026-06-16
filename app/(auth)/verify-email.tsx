@@ -8,50 +8,34 @@ import {
   Alert,
 } from "react-native";
 import { useState } from "react";
-import { sendEmailVerification } from "firebase/auth";
-import { auth } from "@/firebase/config";
-import { signOut } from "@/firebase/googleAuth";
-import { router } from "expo-router";
+import { supabase } from "@/lib/supabase";
+import { router, useLocalSearchParams } from "expo-router";
 
 export default function VerifyEmail() {
-  const user = auth.currentUser;
-  const [checking, setChecking] = useState(false);
+  const { email } = useLocalSearchParams<{ email: string }>();
   const [resending, setResending] = useState(false);
 
-  const handleCheckVerified = async () => {
-    setChecking(true);
-    try {
-      await user!.reload();
-      if (auth.currentUser?.emailVerified) {
-        router.replace("/(tabs)/home");
-      } else {
-        Alert.alert(
-          "Not verified yet",
-          "Email not verified yet. Please check your inbox.",
-        );
-      }
-    } catch {
-      Alert.alert("Error", "Could not check verification status. Try again.");
-    } finally {
-      setChecking(false);
-    }
-  };
-
   const handleResend = async () => {
+    if (!email) return;
     setResending(true);
     try {
-      await sendEmailVerification(user!);
-      Alert.alert("Sent", "Verification email resent.");
-    } catch {
-      Alert.alert("Error", "Could not resend verification email. Try again.");
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email,
+      });
+      if (error) throw error;
+      Alert.alert("Sent", "Verification email resent. Check your inbox.");
+    } catch (e: any) {
+      Alert.alert("Error", e.message ?? "Could not resend verification email. Try again.");
     } finally {
       setResending(false);
     }
   };
 
-  const handleSignOut = async () => {
-    await signOut();
-    router.replace("/");
+  const handleContinueToSignIn = () => {
+    // After the user clicks the confirmation link in their email, their account
+    // is active. They return here and tap this to go sign in normally.
+    router.replace("/login");
   };
 
   return (
@@ -73,19 +57,16 @@ export default function VerifyEmail() {
 
           <Text style={styles.message}>
             We sent a verification email to{" "}
-            <Text style={styles.emailHighlight}>{user?.email}</Text>. Please
-            check your inbox and verify before continuing.
+            <Text style={styles.emailHighlight}>{email}</Text>. Click the link
+            in that email, then come back here to sign in.
           </Text>
 
           <TouchableOpacity
-            style={[styles.primaryBtn, checking && styles.primaryBtnDisabled]}
-            onPress={handleCheckVerified}
+            style={styles.primaryBtn}
+            onPress={handleContinueToSignIn}
             activeOpacity={0.85}
-            disabled={checking}
           >
-            <Text style={styles.primaryBtnText}>
-              {checking ? "Checking…" : "I've verified my email"}
-            </Text>
+            <Text style={styles.primaryBtnText}>Continue to sign in</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -99,11 +80,6 @@ export default function VerifyEmail() {
             </Text>
           </TouchableOpacity>
         </View>
-
-        {/* Sign out link */}
-        <TouchableOpacity onPress={handleSignOut} activeOpacity={0.7}>
-          <Text style={styles.signOutLink}>Sign out</Text>
-        </TouchableOpacity>
 
         <Text style={styles.copyright}>
           QINETIC • {new Date().getFullYear()}
@@ -210,9 +186,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
   },
-  primaryBtnDisabled: {
-    backgroundColor: "#555555",
-  },
   primaryBtnText: {
     color: "#000000",
     fontSize: 16,
@@ -232,16 +205,6 @@ const styles = StyleSheet.create({
     color: "#FFD944",
     fontSize: 15,
     fontWeight: "700",
-  },
-
-  // Sign out
-  signOutLink: {
-    textAlign: "center",
-    fontSize: 14,
-    color: "#555555",
-    fontWeight: "600",
-    marginBottom: 24,
-    textDecorationLine: "underline",
   },
 
   copyright: {
