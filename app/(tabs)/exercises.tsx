@@ -8,12 +8,18 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Animated,
   FlatList,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { getExercises, addExercise, deleteExercise } from "@/supabase/exercises";
+import {
+  getExercises,
+  addExercise,
+  deleteExercise,
+  updateExercisesOrder,
+} from "@/supabase/exercises";
 import { Exercise } from "@/lib/types";
 import { useRouter, useFocusEffect } from "expo-router";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -22,13 +28,19 @@ import * as Haptics from "expo-haptics";
 import { useWeightUnit } from "@/app/context/WeightUnitContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { C, PRESET_COLORS, getExerciseTileBg } from "@/lib/colors";
+import DraggableFlatList, {
+  RenderItemParams,
+  ScaleDecorator,
+} from "react-native-draggable-flatlist";
 
 const MUSCLE_TAGS = ["Chest", "Back", "Legs", "Shoulders", "Biceps", "Triceps", "Glutes", "Core"];
 const TYPE_TAGS = ["Push", "Pull", "Compound", "Bodyweight", "Cardio"];
 
+const VALID_EXERCISE_ICONS = new Set(["dumbbell", "weight-lifter", "arm-flex", "kettlebell", "bench"]);
+
 function getExerciseIcon(exercise: Exercise): keyof typeof MaterialCommunityIcons.glyphMap {
-  const muscle = exercise.muscleTag?.toLowerCase() ?? "";
-  if (muscle === "legs" || muscle === "glutes") return "run-fast";
+  const stored = exercise.emoji;
+  if (stored && VALID_EXERCISE_ICONS.has(stored)) return stored as keyof typeof MaterialCommunityIcons.glyphMap;
   return "dumbbell";
 }
 
@@ -50,13 +62,38 @@ export default function Exercises() {
   const [setsFocused, setSetsFocused] = useState(false);
   const [repsFocused, setRepsFocused] = useState(false);
 
+  // Multi-select state
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  // selectModeAnim drives both the circle width (list rows) and bottom bar slide.
+  // useNativeDriver: false because it animates layout (width) — the per-item fill
+  // anims use useNativeDriver: true (transform only).
+  const selectModeAnim = useRef(new Animated.Value(0)).current;
+  const selectionAnims = useRef<Record<string, Animated.Value>>({});
+
+  const circleContainerWidth = selectModeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 38],
+  });
+  const bottomBarTranslateY = selectModeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [100, 0],
+  });
+
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const [userId, setUserId] = useState("");
+
+  // ── Data fetching ──────────────────────────────────────────────────────────
 
   const fetchExercises = async () => {
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
       if (!userId) setUserId(user.id);
       const data = await getExercises(user.id);
@@ -74,6 +111,8 @@ export default function Exercises() {
     }, []),
   );
 
+  // ── Add sheet ─────────────────────────────────────────────────────────────
+
   const resetAddSheet = () => {
     setName("");
     setSets("");
@@ -81,6 +120,12 @@ export default function Exercises() {
     setMuscleTag("");
     setTypeTag("");
     setSelectedColor(C.accentYellow);
+  };
+
+  const openAddSheet = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    resetAddSheet();
+    addSheetRef.current?.present();
   };
 
   const handleAdd = async () => {
@@ -118,29 +163,81 @@ export default function Exercises() {
     }
   };
 
-  const openAddSheet = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    resetAddSheet();
-    addSheetRef.current?.present();
+  // ── Multi-select ──────────────────────────────────────────────────────────
+
+  const getSelectionAnim = (id: string) => {
+    if (!selectionAnims.current[id]) {
+      selectionAnims.current[id] = new Animated.Value(0);
+    }
+    return selectionAnims.current[id];
   };
 
-  const handleLongPressDelete = (exercise: Exercise) => {
+  const enterSelectMode = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSelectMode(true);
+    Animated.spring(selectModeAnim, {
+      toValue: 1,
+      useNativeDriver: false,
+      tension: 180,
+      friction: 14,
+    }).start();
+  };
+
+  const exitSelectMode = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.spring(selectModeAnim, {
+      toValue: 0,
+      useNativeDriver: false,
+      tension: 180,
+      friction: 14,
+    }).start(() => {
+      setSelectMode(false);
+      setSelectedIds(new Set());
+      Object.values(selectionAnims.current).forEach((a) => a.setValue(0));
+    });
+  };
+
+  const toggleSelect = (id: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const anim = getSelectionAnim(id);
+    const willBeSelected = !selectedIds.has(id);
+    Animated.spring(anim, {
+      toValue: willBeSelected ? 1 : 0,
+      useNativeDriver: true,
+      tension: 300,
+      friction: 18,
+    }).start();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert(
-      "Delete exercise",
-      `Delete "${exercise.name}"? This will remove all its history.`,
+      "Delete Exercises",
+      `Delete ${selectedIds.size} exercise${selectedIds.size !== 1 ? "s" : ""}? This will remove all their history.`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
+            setDeleting(true);
             try {
-              await deleteExercise(userId, exercise.id);
+              await Promise.all([...selectedIds].map((id) => deleteExercise(userId, id)));
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              exitSelectMode();
               await fetchExercises();
             } catch (err: any) {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
               Alert.alert("Error", err.message);
+            } finally {
+              setDeleting(false);
             }
           },
         },
@@ -148,26 +245,120 @@ export default function Exercises() {
     );
   };
 
+  // ── Drag-to-reorder ───────────────────────────────────────────────────────
+
+  const handleDragEnd = ({ data }: { data: Exercise[] }) => {
+    setExercises(data); // optimistic
+    updateExercisesOrder(userId, data).catch((err: any) => {
+      Alert.alert("Error reordering", err.message);
+      fetchExercises(); // revert on failure
+    });
+  };
+
+  // ── Render items ──────────────────────────────────────────────────────────
+
+  // Grid uses plain FlatList — no drag, no ScaleDecorator wrapper, so flex:1 fills columns correctly.
   const renderGridCard = ({ item }: { item: Exercise }) => {
     const exColor = item.color ?? C.accentYellow;
+    const isSelected = selectedIds.has(item.id);
+    const selAnim = getSelectionAnim(item.id);
     return (
       <TouchableOpacity
-        style={styles.gridCard}
-        onPress={() => router.push(`/exercise/${item.id}`)}
-        onLongPress={() => handleLongPressDelete(item)}
-        delayLongPress={500}
+        style={[styles.gridCard, isSelected && styles.cardSelected]}
+        onPress={() => {
+          if (selectMode) toggleSelect(item.id);
+          else router.push(`/exercise/${item.id}`);
+        }}
         activeOpacity={0.75}
       >
-        <View style={[styles.gridCardTop, { backgroundColor: getExerciseTileBg(exColor) }]}>
-          <View style={[styles.cardIconTile, { backgroundColor: getExerciseTileBg(exColor) }]}>
-            <MaterialCommunityIcons name={getExerciseIcon(item)} size={28} color={exColor} />
+          {/* Selection circle — absolute top-right, fades in with select mode */}
+          <Animated.View style={[styles.gridCircle, { opacity: selectModeAnim }]}>
+            <View style={[styles.circleOuter, isSelected && styles.circleOuterSelected]}>
+              <Animated.View
+                style={[styles.circleFill, { transform: [{ scale: selAnim }] }]}
+              >
+                <Text style={styles.circleCheck}>✓</Text>
+              </Animated.View>
+            </View>
+          </Animated.View>
+
+          <View style={[styles.gridCardTop, { backgroundColor: getExerciseTileBg(exColor) }]}>
+            <View style={[styles.cardIconTile, { backgroundColor: getExerciseTileBg(exColor) }]}>
+              <MaterialCommunityIcons name={getExerciseIcon(item)} size={28} color={exColor} />
+            </View>
           </View>
-        </View>
-        <View style={styles.gridCardBody}>
-          <Text style={styles.gridCardName} numberOfLines={2}>{item.name}</Text>
-          <Text style={styles.gridCardMeta}>{item.sets} sets · {item.reps} reps</Text>
-          {(item.muscleTag || item.typeTag) && (
-            <View style={styles.tagRow}>
+          <View style={styles.gridCardBody}>
+            <Text style={styles.gridCardName} numberOfLines={2}>{item.name}</Text>
+            <Text style={styles.gridCardMeta}>{item.sets} sets · {item.reps} reps</Text>
+            {(item.muscleTag || item.typeTag) && (
+              <View style={styles.tagRow}>
+                {item.muscleTag && (
+                  <View style={[styles.tagChip, { backgroundColor: exColor + "22" }]}>
+                    <Text style={[styles.tagChipText, { color: exColor }]}>{item.muscleTag}</Text>
+                  </View>
+                )}
+                {item.typeTag && (
+                  <View style={styles.tagChipAlt}>
+                    <Text style={styles.tagChipTextAlt}>{item.typeTag}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+            {item.maxWeight > 0 && (
+              <View style={[styles.prBadge, { backgroundColor: exColor + "22" }]}>
+                <MaterialCommunityIcons name="trophy-outline" size={10} color={exColor} />
+                <Text style={[styles.prText, { color: exColor }]}>{format(item.maxWeight)}</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+    );
+  };
+
+  const renderListRow = ({ item, drag, isActive }: RenderItemParams<Exercise>) => {
+    const exColor = item.color ?? C.accentYellow;
+    const isSelected = selectedIds.has(item.id);
+    const selAnim = getSelectionAnim(item.id);
+    return (
+      <ScaleDecorator activeScale={1.02}>
+        <TouchableOpacity
+          style={[
+            styles.listRow,
+            isActive && styles.cardActive,
+            isSelected && styles.cardSelected,
+          ]}
+          onPress={() => {
+            if (selectMode) toggleSelect(item.id);
+            else router.push(`/exercise/${item.id}`);
+          }}
+          onLongPress={() => {
+            if (!selectMode) {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              drag();
+            }
+          }}
+          delayLongPress={300}
+          activeOpacity={0.75}
+        >
+          {/* Circle slides in from the left, pushing content right */}
+          <Animated.View
+            style={[styles.listCircleContainer, { width: circleContainerWidth }]}
+          >
+            <View style={[styles.circleOuter, isSelected && styles.circleOuterSelected]}>
+              <Animated.View
+                style={[styles.circleFill, { transform: [{ scale: selAnim }] }]}
+              >
+                <Text style={styles.circleCheck}>✓</Text>
+              </Animated.View>
+            </View>
+          </Animated.View>
+
+          <View style={[styles.listIconTile, { backgroundColor: getExerciseTileBg(exColor) }]}>
+            <MaterialCommunityIcons name={getExerciseIcon(item)} size={18} color={exColor} />
+          </View>
+          <View style={styles.listInfo}>
+            <Text style={styles.listName} numberOfLines={1}>{item.name}</Text>
+            <View style={styles.listTagRow}>
               {item.muscleTag && (
                 <View style={[styles.tagChip, { backgroundColor: exColor + "22" }]}>
                   <Text style={[styles.tagChipText, { color: exColor }]}>{item.muscleTag}</Text>
@@ -179,55 +370,15 @@ export default function Exercises() {
                 </View>
               )}
             </View>
-          )}
-          {item.maxWeight > 0 && (
-            <View style={[styles.prBadge, { backgroundColor: exColor + "22" }]}>
-              <MaterialCommunityIcons name="trophy-outline" size={10} color={exColor} />
-              <Text style={[styles.prText, { color: exColor }]}>{format(item.maxWeight)}</Text>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderListRow = ({ item }: { item: Exercise }) => {
-    const exColor = item.color ?? C.accentYellow;
-    return (
-      <TouchableOpacity
-        style={styles.listRow}
-        onPress={() => router.push(`/exercise/${item.id}`)}
-        onLongPress={() => handleLongPressDelete(item)}
-        delayLongPress={500}
-        activeOpacity={0.75}
-      >
-        <View style={[styles.listIconTile, { backgroundColor: getExerciseTileBg(exColor) }]}>
-          <MaterialCommunityIcons name={getExerciseIcon(item)} size={18} color={exColor} />
-        </View>
-        <View style={styles.listInfo}>
-          <Text style={styles.listName} numberOfLines={1}>{item.name}</Text>
-          <View style={styles.listTagRow}>
-            {item.muscleTag && (
-              <View style={[styles.tagChip, { backgroundColor: exColor + "22" }]}>
-                <Text style={[styles.tagChipText, { color: exColor }]}>{item.muscleTag}</Text>
-              </View>
-            )}
-            {item.typeTag && (
-              <View style={styles.tagChipAlt}>
-                <Text style={styles.tagChipTextAlt}>{item.typeTag}</Text>
-              </View>
-            )}
           </View>
-        </View>
-        {item.maxWeight > 0 && (
-          <Text style={[styles.listMaxWeight, { color: exColor }]}>{format(item.maxWeight)}</Text>
-        )}
-        <MaterialCommunityIcons name="chevron-right" size={18} color={C.textQuaternary} />
-      </TouchableOpacity>
+          {item.maxWeight > 0 && (
+            <Text style={[styles.listMaxWeight, { color: exColor }]}>{format(item.maxWeight)}</Text>
+          )}
+          <MaterialCommunityIcons name="chevron-right" size={18} color={C.textQuaternary} />
+        </TouchableOpacity>
+      </ScaleDecorator>
     );
   };
-
-  const renderCard = layout === "grid" ? renderGridCard : renderListRow;
 
   const ListEmptyComponent = () => (
     <View style={styles.emptyState}>
@@ -244,6 +395,8 @@ export default function Exercises() {
     </TouchableOpacity>
   );
 
+  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
@@ -257,23 +410,42 @@ export default function Exercises() {
               {exercises.length} exercise{exercises.length !== 1 ? "s" : ""}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.layoutToggleBtn}
-            onPress={() => setLayout((l) => (l === "grid" ? "list" : "grid"))}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons
-              name={layout === "grid" ? "view-list" : "view-grid"}
-              size={22}
-              color={C.textPrimary}
-            />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {!selectMode && (
+              <TouchableOpacity
+                style={styles.layoutToggleBtn}
+                onPress={() => setLayout((l) => (l === "grid" ? "list" : "grid"))}
+                activeOpacity={0.7}
+              >
+                <MaterialCommunityIcons
+                  name={layout === "grid" ? "view-list" : "view-grid"}
+                  size={22}
+                  color={C.textPrimary}
+                />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={selectMode ? styles.cancelSelectBtn : styles.selectBtn}
+              onPress={selectMode ? exitSelectMode : enterSelectMode}
+              activeOpacity={0.7}
+            >
+              <Text style={selectMode ? styles.cancelSelectBtnText : styles.selectBtnText}>
+                {selectMode ? "Cancel" : "Select"}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Hint */}
         {exercises.length > 0 && (
           <View style={styles.hintBox}>
-            <Text style={styles.hintText}>Tap to view · Long press to delete</Text>
+            <Text style={styles.hintText}>
+              {selectMode
+                ? "Tap exercises to select · Tap Cancel to exit"
+                : layout === "list"
+                  ? "Tap to view · Long press to reorder"
+                  : "Tap to view"}
+            </Text>
           </View>
         )}
 
@@ -281,14 +453,24 @@ export default function Exercises() {
           <View style={styles.centered}>
             <ActivityIndicator size="large" color={C.accentYellow} />
           </View>
-        ) : (
+        ) : layout === "grid" ? (
           <FlatList
-            key={layout}
             data={exercises}
             keyExtractor={(item) => item.id}
-            renderItem={renderCard}
-            numColumns={layout === "grid" ? 2 : 1}
-            contentContainerStyle={styles.grid}
+            renderItem={renderGridCard}
+            numColumns={2}
+            contentContainerStyle={[styles.grid, selectMode && styles.gridSelectPadding]}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={ListEmptyComponent}
+            ListFooterComponent={ListFooterComponent}
+          />
+        ) : (
+          <DraggableFlatList
+            data={exercises}
+            keyExtractor={(item) => item.id}
+            renderItem={renderListRow}
+            onDragEnd={handleDragEnd}
+            contentContainerStyle={[styles.grid, selectMode && styles.gridSelectPadding]}
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={ListEmptyComponent}
             ListFooterComponent={ListFooterComponent}
@@ -296,12 +478,39 @@ export default function Exercises() {
         )}
       </View>
 
-      {/* ── Add Exercise Sheet ── */}
-      <AppBottomSheet
-        sheetRef={addSheetRef}
-        snapPoints={["90%"]}
-        onDismiss={resetAddSheet}
+      {/* Bottom delete bar — slides up in select mode */}
+      <Animated.View
+        style={[
+          styles.selectBar,
+          {
+            transform: [{ translateY: bottomBarTranslateY }],
+            opacity: selectModeAnim,
+            bottom: insets.bottom + 80,
+          },
+        ]}
+        pointerEvents={selectMode ? "auto" : "none"}
       >
+        <TouchableOpacity
+          style={[
+            styles.deleteSelectedBtn,
+            selectedIds.size === 0 && styles.deleteSelectedBtnDisabled,
+          ]}
+          onPress={handleDeleteSelected}
+          disabled={selectedIds.size === 0 || deleting}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.deleteSelectedBtnText}>
+            {deleting
+              ? "Deleting…"
+              : selectedIds.size > 0
+                ? `Delete ${selectedIds.size} Exercise${selectedIds.size !== 1 ? "s" : ""}`
+                : "Select exercises to delete"}
+          </Text>
+        </TouchableOpacity>
+      </Animated.View>
+
+      {/* ── Add Exercise Sheet ── */}
+      <AppBottomSheet sheetRef={addSheetRef} snapPoints={["90%"]} onDismiss={resetAddSheet}>
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
@@ -417,7 +626,11 @@ export default function Exercises() {
             <Text style={styles.confirmBtnText}>{adding ? "Adding…" : "Add Exercise"}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.cancelBtn} onPress={() => addSheetRef.current?.dismiss()} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={() => addSheetRef.current?.dismiss()}
+            activeOpacity={0.7}
+          >
             <Text style={styles.cancelBtnText}>Cancel</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -431,6 +644,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 18, paddingTop: 20 },
   centered: { flex: 1, justifyContent: "center", alignItems: "center", gap: 8 },
 
+  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -449,6 +663,11 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     marginTop: 2,
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   layoutToggleBtn: {
     width: 40,
     height: 40,
@@ -457,7 +676,30 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  selectBtn: {
+    backgroundColor: C.bgSurface1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  selectBtnText: {
+    color: C.textPrimary,
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  cancelSelectBtn: {
+    backgroundColor: C.bgSurface1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  cancelSelectBtnText: {
+    color: C.accentYellow,
+    fontWeight: "600",
+    fontSize: 14,
+  },
 
+  // Hint
   hintBox: {
     backgroundColor: C.bgSurface1,
     borderRadius: 12,
@@ -467,7 +709,9 @@ const styles = StyleSheet.create({
   },
   hintText: { fontSize: 12, color: C.textSecondary, fontWeight: "500" },
 
+  // List container
   grid: { paddingBottom: 32 },
+  gridSelectPadding: { paddingBottom: 120 },
 
   // Grid cards
   gridCard: {
@@ -476,6 +720,8 @@ const styles = StyleSheet.create({
     margin: 6,
     flex: 1,
     overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "transparent",
   },
   gridCardTop: {
     height: 80,
@@ -508,6 +754,8 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 12,
     flex: 1,
+    borderWidth: 2,
+    borderColor: "transparent",
   },
   listIconTile: {
     width: 36,
@@ -527,6 +775,61 @@ const styles = StyleSheet.create({
   listMaxWeight: {
     fontSize: 13,
     fontWeight: "700",
+  },
+
+  // Drag / selection card states
+  cardActive: {
+    shadowColor: C.accentYellow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
+    opacity: 0.92,
+  },
+  cardSelected: {
+    borderColor: C.accentYellow,
+  },
+
+  // Selection circles
+  // Grid: absolute top-right, fades in via opacity
+  gridCircle: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    zIndex: 10,
+  },
+  // List: left-edge, slides in via animated width
+  listCircleContainer: {
+    overflow: "hidden",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  circleOuter: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: C.bgSurface3,
+    backgroundColor: C.bgBlack,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  circleOuterSelected: {
+    borderColor: C.accentYellow,
+  },
+  circleFill: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: C.accentYellow,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  circleCheck: {
+    color: C.bgBlack,
+    fontSize: 9,
+    fontWeight: "800",
+    lineHeight: 11,
   },
 
   // Shared tags
@@ -588,6 +891,36 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: C.textTertiary,
     fontWeight: "600",
+  },
+
+  // Bottom delete bar
+  selectBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 20,
+  },
+  deleteSelectedBtn: {
+    backgroundColor: "#EF4444",
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  deleteSelectedBtnDisabled: {
+    backgroundColor: C.bgSurface3,
+  },
+  deleteSelectedBtnText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 0.3,
   },
 
   // Sheet form

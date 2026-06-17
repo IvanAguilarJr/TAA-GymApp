@@ -25,17 +25,23 @@ import {
 } from "@/supabase/exercises";
 import { Exercise, SetEntry } from "@/lib/types";
 
-const EXERCISE_EMOJIS = [
-  "💪","🏋️","🦵","🔝","🙌","📐","🦿","💀","🏃","🚴",
-  "🤸","⚡","🔥","🥊","🎯","🏊","🧘","⛹️","🤼","🏇",
-  "🦾","🧗","🥋","🎽","🏅","🛡️","⚔️","🌊","🏔️","🎪",
-];
+// Icon names stored in the `emoji` column (repurposed from emoji characters to icon name strings).
+const EXERCISE_ICONS = [
+  "dumbbell", "weight-lifter", "arm-flex", "kettlebell", "bench",
+] as const;
+
+const EXERCISE_ICON_SET = new Set<string>(EXERCISE_ICONS);
+
+function isValidIcon(value: string | null | undefined): value is string {
+  return !!value && EXERCISE_ICON_SET.has(value);
+}
 import { LineChart } from "react-native-chart-kit";
 import { Dimensions } from "react-native";
 import { useWeightUnit } from "@/app/context/WeightUnitContext";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import AppBottomSheet from "@/components/AppBottomSheet";
-import { C, PRESET_COLORS } from "@/lib/colors";
+import { C, PRESET_COLORS, getExerciseTileBg } from "@/lib/colors";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 
 type SetInputRow = {
@@ -63,9 +69,9 @@ export default function ExerciseDetail() {
   const [editName, setEditName] = useState("");
   const [editSets, setEditSets] = useState("");
   const [editReps, setEditReps] = useState("");
-  const [editEmoji, setEditEmoji] = useState<string>("💪");
+  const [editIcon, setEditIcon] = useState<string>("dumbbell");
   const [editColor, setEditColor] = useState<string>(C.accentYellow);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showIconPicker, setShowIconPicker] = useState(false);
   const [editNameFocused, setEditNameFocused] = useState(false);
   const [editSetsFocused, setEditSetsFocused] = useState(false);
   const [editRepsFocused, setEditRepsFocused] = useState(false);
@@ -188,9 +194,9 @@ export default function ExerciseDetail() {
     setEditName(exercise.name);
     setEditSets(String(exercise.sets));
     setEditReps(String(exercise.reps));
-    setEditEmoji(exercise.emoji ?? "💪");
+    setEditIcon(isValidIcon(exercise.emoji) ? exercise.emoji : "dumbbell");
     setEditColor(exercise.color ?? C.accentYellow);
-    setShowEmojiPicker(false);
+    setShowIconPicker(false);
     editSheetRef.current?.present();
   };
 
@@ -219,7 +225,7 @@ export default function ExerciseDetail() {
         name: editName.trim(),
         sets: setsNum,
         reps: repsNum,
-        emoji: editEmoji,
+        emoji: editIcon,
         color: editColor,
       });
       editSheetRef.current?.dismiss(); // ← was incorrectly .present() before
@@ -383,6 +389,8 @@ export default function ExerciseDetail() {
     .reverse();
 
   const lastSession = sortedHistory[0];
+  const exColor = exercise.color ?? C.accentYellow;
+  const iconName = (isValidIcon(exercise.emoji) ? exercise.emoji : "dumbbell") as keyof typeof MaterialCommunityIcons.glyphMap;
 
   const progressData = exercise.history
     .slice()
@@ -421,8 +429,12 @@ export default function ExerciseDetail() {
         {/* Hero card */}
         <View style={styles.heroCard}>
           <View style={styles.cardAccent} />
-          <View style={styles.heroIconBox}>
-            <Text style={styles.heroIcon}>{exercise.emoji ?? "💪"}</Text>
+          <View style={[styles.heroIconBox, {
+            backgroundColor: getExerciseTileBg(exColor),
+            borderWidth: 1.5,
+            borderColor: exColor + "4D",
+          }]}>
+            <MaterialCommunityIcons name={iconName} size={32} color={exColor} />
           </View>
           <Text style={styles.heroName}>{exercise.name}</Text>
           <View style={styles.heroMetaRow}>
@@ -434,7 +446,7 @@ export default function ExerciseDetail() {
             </View>
             <View style={styles.metaPill}>
               <Text style={styles.metaPillText}>
-                📅 {exercise.days?.join(" · ") || "Unscheduled"}
+                {exercise.days?.join(" · ") || "Unscheduled"}
               </Text>
             </View>
           </View>
@@ -468,7 +480,10 @@ export default function ExerciseDetail() {
         {/* PR bar */}
         {exercise.maxWeight > 0 && (
           <View style={styles.prBar}>
-            <Text style={styles.prBarLeft}>🏆 Personal record</Text>
+            <View style={styles.prBarLeftRow}>
+              <MaterialCommunityIcons name="trophy-outline" size={14} color="#FFD944" />
+              <Text style={styles.prBarLeft}>Personal record</Text>
+            </View>
             <Text style={styles.prBarRight}>{format(exercise.maxWeight)}</Text>
           </View>
         )}
@@ -560,7 +575,6 @@ export default function ExerciseDetail() {
 
         {sortedHistory.length === 0 ? (
           <View style={styles.emptyHistory}>
-            <Text style={styles.emptyHistoryIcon}>📋</Text>
             <Text style={styles.emptyHistoryText}>No sessions logged yet</Text>
             <Text style={styles.emptyHistorySubtext}>
               Tap "Log Session" to record your first lift
@@ -595,7 +609,8 @@ export default function ExerciseDetail() {
                   <View style={styles.historyTopRight}>
                     {isPR && (
                       <View style={styles.prBadge}>
-                        <Text style={styles.prBadgeText}>🏆 PR</Text>
+                        <MaterialCommunityIcons name="trophy-outline" size={10} color="#FFD944" />
+                        <Text style={styles.prBadgeText}>PR</Text>
                       </View>
                     )}
                     <Text style={styles.dots}>⋮</Text>
@@ -701,8 +716,7 @@ export default function ExerciseDetail() {
         {hasNewPR() && (
           <View style={styles.prHint}>
             <Text style={styles.prHintText}>
-              🎉 New PR! That's {newPRAmount()} {unit} more than your current
-              best!
+              New PR! That's {newPRAmount()} {unit} more than your current best!
             </Text>
           </View>
         )}
@@ -732,9 +746,9 @@ export default function ExerciseDetail() {
         <View style={{ paddingHorizontal: 24, paddingBottom: 32 }}>
           <Text style={styles.modalTitle}>Edit Exercise</Text>
 
-          {/* Emoji picker */}
+          {/* Icon picker */}
           <TouchableOpacity
-            onPress={() => setShowEmojiPicker((p) => !p)}
+            onPress={() => setShowIconPicker((p) => !p)}
             activeOpacity={0.8}
           >
             <View
@@ -742,17 +756,21 @@ export default function ExerciseDetail() {
                 width: 64,
                 height: 64,
                 borderRadius: 18,
-                backgroundColor: "#000000",
+                backgroundColor: getExerciseTileBg(editColor),
                 justifyContent: "center",
                 alignItems: "center",
                 alignSelf: "center",
                 borderWidth: 1.5,
-                borderColor: showEmojiPicker ? "#FFD944" : "#222222",
+                borderColor: showIconPicker ? editColor : editColor + "4D",
                 marginBottom: 4,
                 marginTop: 8,
               }}
             >
-              <Text style={{ fontSize: 30 }}>{editEmoji}</Text>
+              <MaterialCommunityIcons
+                name={editIcon as keyof typeof MaterialCommunityIcons.glyphMap}
+                size={30}
+                color={editColor}
+              />
             </View>
             <Text
               style={{
@@ -766,7 +784,7 @@ export default function ExerciseDetail() {
             </Text>
           </TouchableOpacity>
 
-          {showEmojiPicker && (
+          {showIconPicker && (
             <View
               style={{
                 flexDirection: "row",
@@ -775,24 +793,30 @@ export default function ExerciseDetail() {
                 marginBottom: 16,
               }}
             >
-              {EXERCISE_EMOJIS.map((emoji) => (
+              {EXERCISE_ICONS.map((icon) => (
                 <TouchableOpacity
-                  key={emoji}
+                  key={icon}
                   style={{
                     width: 44,
                     height: 44,
-                    backgroundColor: editEmoji === emoji ? "#FFD944" : "#000000",
+                    backgroundColor: editIcon === icon ? "#FFD944" : "#111111",
                     borderRadius: 12,
                     justifyContent: "center",
                     alignItems: "center",
+                    borderWidth: editIcon === icon ? 0 : 1,
+                    borderColor: "#222222",
                   }}
                   onPress={() => {
-                    setEditEmoji(emoji);
-                    setShowEmojiPicker(false);
+                    setEditIcon(icon);
+                    setShowIconPicker(false);
                   }}
                   activeOpacity={0.7}
                 >
-                  <Text style={{ fontSize: 22 }}>{emoji}</Text>
+                  <MaterialCommunityIcons
+                    name={icon}
+                    size={24}
+                    color={editIcon === icon ? "#000000" : "#888780"}
+                  />
                 </TouchableOpacity>
               ))}
             </View>
@@ -989,14 +1013,12 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 20,
-    backgroundColor: "#000000",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 10,
     marginTop: 20,
     alignSelf: "center",
   },
-  heroIcon: { fontSize: 30, lineHeight: 30 },
   heroName: {
     fontSize: 22,
     fontWeight: "700",
@@ -1062,19 +1084,22 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     borderColor: "#222222",
   },
-  setVal: { fontSize: 13, fontWeight: "600", color: "#FFD944" },
+  setVal: { fontSize: 13, fontWeight: "600", color: "#EEEDE9" },
   setLbl: { fontSize: 10, color: "#555555", marginTop: 2 },
   prBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "#FFD944",
+    backgroundColor: "#FFD94424",
+    borderWidth: 1,
+    borderColor: "#FFD9444D",
     borderRadius: 12,
     padding: 12,
     marginBottom: 14,
   },
-  prBarLeft: { fontSize: 13, color: "#000000", fontWeight: "600" },
-  prBarRight: { fontSize: 15, fontWeight: "700", color: "#000000" },
+  prBarLeftRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  prBarLeft: { fontSize: 13, color: "#FFD944", fontWeight: "600" },
+  prBarRight: { fontSize: 15, fontWeight: "700", color: "#FFD944" },
   statsRow: {
     flexDirection: "row",
     backgroundColor: "#111111",
@@ -1091,7 +1116,7 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 17,
     fontWeight: "700",
-    color: "#FFD944",
+    color: "#EEEDE9",
     marginBottom: 3,
   },
   statLabel: {
@@ -1144,12 +1169,17 @@ const styles = StyleSheet.create({
   historyDate: { fontSize: 14, fontWeight: "600", color: "#FFD944" },
   historyTime: { fontSize: 11, color: "#555555", marginTop: 2 },
   prBadge: {
-    backgroundColor: "#FFD944",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FFD94424",
+    borderWidth: 1,
+    borderColor: "#FFD9444D",
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  prBadgeText: { fontSize: 11, fontWeight: "700", color: "#000000" },
+  prBadgeText: { fontSize: 11, fontWeight: "700", color: "#FFD944" },
   dots: { fontSize: 20, color: "#555555", fontWeight: "700" },
   historySetsGrid: { flexDirection: "row", gap: 6 },
   historySetCol: {
@@ -1159,7 +1189,11 @@ const styles = StyleSheet.create({
     padding: 8,
     alignItems: "center",
   },
-  historySetColPR: { backgroundColor: "#FFD944" },
+  historySetColPR: {
+    backgroundColor: "#FFD94424",
+    borderWidth: 1,
+    borderColor: "#FFD9444D",
+  },
   historySetNum: {
     fontSize: 10,
     color: "#555555",
@@ -1168,13 +1202,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 4,
   },
-  historySetNumPR: { color: "#000000" },
-  historySetVal: { fontSize: 13, fontWeight: "700", color: "#FFD944" },
-  historySetValPR: { color: "#000000" },
+  historySetNumPR: { color: "#FFD944" },
+  historySetVal: { fontSize: 13, fontWeight: "700", color: "#EEEDE9" },
+  historySetValPR: { color: "#FFD944" },
   historySetReps: { fontSize: 11, color: "#555555", marginTop: 2 },
-  historySetRepsPR: { color: "#000000" },
+  historySetRepsPR: { color: "#FFD944" },
   emptyHistory: { alignItems: "center", paddingVertical: 32, gap: 6 },
-  emptyHistoryIcon: { fontSize: 40, marginBottom: 4 },
   emptyHistoryText: { fontSize: 16, fontWeight: "700", color: "#FFD944" },
   emptyHistorySubtext: { fontSize: 13, color: "#555555", textAlign: "center" },
   modalTitle: {
@@ -1231,12 +1264,14 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
   },
   prHint: {
-    backgroundColor: "#F0FDF4",
+    backgroundColor: "#FFD94420",
+    borderWidth: 1,
+    borderColor: "#FFD94466",
     borderRadius: 10,
     padding: 12,
     marginBottom: 8,
   },
-  prHintText: { fontSize: 13, color: "#16A34A", fontWeight: "600" },
+  prHintText: { fontSize: 13, color: "#FFD944", fontWeight: "600" },
   fieldLabel: {
     fontSize: 11,
     fontWeight: "600",

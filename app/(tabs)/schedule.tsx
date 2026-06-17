@@ -1,3 +1,4 @@
+import React from "react";
 import {
   View,
   Text,
@@ -11,6 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useCallback, useRef } from "react";
+import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "@/lib/supabase";
 import { getExercises, updateExerciseDays } from "@/supabase/exercises";
 import { Exercise, Day } from "@/lib/types";
@@ -25,9 +27,11 @@ const MAX_SLOTS = 12;
 
 type CardAnim = { opacity: Animated.Value; scale: Animated.Value; translateY: Animated.Value };
 
+const VALID_EXERCISE_ICONS = new Set(["dumbbell", "weight-lifter", "arm-flex", "kettlebell", "bench"]);
+
 function getExerciseIcon(exercise: Exercise): keyof typeof MaterialCommunityIcons.glyphMap {
-  const muscle = exercise.muscleTag?.toLowerCase() ?? "";
-  if (muscle === "legs" || muscle === "glutes") return "run-fast";
+  const stored = exercise.emoji;
+  if (stored && VALID_EXERCISE_ICONS.has(stored)) return stored as keyof typeof MaterialCommunityIcons.glyphMap;
   return "dumbbell";
 }
 
@@ -129,7 +133,7 @@ export default function Schedule() {
   const renderSlots = () => {
     const filled = scheduledExercises;
     const totalSlots = Math.min(filled.length + (filled.length < MAX_SLOTS ? 1 : 0), MAX_SLOTS);
-    const slots: JSX.Element[] = [];
+    const slots: React.ReactElement[] = [];
 
     for (let i = 0; i < totalSlots; i++) {
       const exercise = filled[i];
@@ -138,7 +142,10 @@ export default function Schedule() {
         slots.push(
           <TouchableOpacity
             key={exercise.id}
-            style={[styles.slotFilled, { borderColor: exColor }]}
+            style={[
+              styles.slotFilled,
+              { borderColor: exColor, backgroundColor: getExerciseTileBg(exColor) },
+            ]}
             onPress={() => removeFromDay(exercise)}
             activeOpacity={0.7}
           >
@@ -164,7 +171,7 @@ export default function Schedule() {
       }
     }
 
-    const rows: JSX.Element[][] = [];
+    const rows: React.ReactElement[][] = [];
     for (let i = 0; i < slots.length; i += 4) rows.push(slots.slice(i, i + 4));
 
     return (
@@ -209,7 +216,7 @@ export default function Schedule() {
         >
           <View style={[styles.bankCardTop, { backgroundColor: getExerciseTileBg(exColor) }]}>
             <View style={[styles.bankIconTile, { backgroundColor: getExerciseTileBg(exColor) }]}>
-              <MaterialCommunityIcons name={getExerciseIcon(exercise)} size={24} color={exColor} />
+              <MaterialCommunityIcons name={getExerciseIcon(exercise)} size={26} color={exColor} />
             </View>
           </View>
           <View style={styles.bankCardBody}>
@@ -227,7 +234,12 @@ export default function Schedule() {
               )}
             </View>
             {exercise.maxWeight > 0 && (
-              <Text style={styles.bankPr}>PR: {format(exercise.maxWeight)} · {exercise.sets}×{exercise.reps}</Text>
+              <View style={[styles.bankPrBadge, { backgroundColor: exColor + "22" }]}>
+                <MaterialCommunityIcons name="trophy-outline" size={9} color={exColor} />
+                <Text style={[styles.bankPrText, { color: exColor }]}>
+                  {format(exercise.maxWeight)} · {exercise.sets}×{exercise.reps}
+                </Text>
+              </View>
             )}
           </View>
         </TouchableOpacity>
@@ -268,11 +280,11 @@ export default function Schedule() {
           </View>
         ) : (
           <>
-            {/* Day selector tabs */}
+            {/* Day selector — compact horizontal pills */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.tabsRow}
+              contentContainerStyle={styles.pillsRow}
             >
               {TRAINING_DAYS.map((day) => {
                 const isActive = day === activeDay;
@@ -281,83 +293,106 @@ export default function Schedule() {
                 return (
                   <TouchableOpacity
                     key={day}
-                    style={[styles.dayTab, isActive && styles.dayTabActive]}
+                    style={[
+                      styles.dayPill,
+                      isActive && styles.dayPillActive,
+                      isRest && !isActive && styles.dayPillRest,
+                    ]}
                     onPress={() => setActiveDay(day)}
                     activeOpacity={0.7}
                   >
-                    <Text style={[styles.dayTabText, isActive && styles.dayTabTextActive]}>
+                    <Text style={[
+                      styles.dayPillText,
+                      isActive && styles.dayPillTextActive,
+                      isRest && !isActive && styles.dayPillTextRest,
+                    ]}>
                       {day}
-                      {isRest ? " ·  rest" : count > 0 ? ` · ${count}` : ""}
                     </Text>
                     <View style={[
-                      styles.dayTabDot,
-                      { backgroundColor: count > 0 || isRest ? C.accentYellow : C.bgSurface3 },
+                      styles.dayPillDot,
+                      count > 0 && !isActive && styles.dayPillDotFilled,
+                      isActive && styles.dayPillDotActive,
                     ]} />
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
 
-            {/* Day panel */}
-            <View style={styles.dayPanel}>
-              <TextInput
-                style={styles.dayNameInput}
-                value={dayNames[activeDay] ?? ""}
-                onChangeText={(text) => setDayNames((prev) => ({ ...prev, [activeDay]: text }))}
-                placeholder="Name this day (e.g. Chest Day)"
-                placeholderTextColor={C.textTertiary}
-              />
+            {/* Day panel — gradient focal card with yellow glow */}
+            <View style={styles.dayPanelShadow}>
+              <LinearGradient
+                colors={["#111111", "#0d0d0d"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.dayPanel}
+              >
+                <TextInput
+                  style={styles.dayNameInput}
+                  value={dayNames[activeDay] ?? ""}
+                  onChangeText={(text) => setDayNames((prev) => ({ ...prev, [activeDay]: text }))}
+                  placeholder="Name this day (e.g. Chest Day)"
+                  placeholderTextColor={C.textTertiary}
+                />
 
-              <View style={styles.slotsPanelHeader}>
-                <View>
-                  <Text style={styles.slotsLabel}>SLOTS</Text>
-                  <Text style={styles.slotsHint}>Tap a slot to remove it</Text>
-                </View>
-                <TouchableOpacity
-                  onPress={toggleRestDay}
-                  style={[
-                    styles.restDayBtn,
-                    restDays.has(activeDay) && styles.restDayBtnActive,
-                  ]}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[
-                    styles.restDayBtnText,
-                    restDays.has(activeDay) && styles.restDayBtnTextActive,
-                  ]}>
-                    {restDays.has(activeDay) ? "✓ Rest day" : "Rest day"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {restDays.has(activeDay) ? (
-                <View style={styles.restDayInfo}>
-                  <MaterialCommunityIcons name="sleep" size={18} color={C.textTertiary} />
-                  <Text style={styles.restDayInfoText}>Marked as rest day — no exercises needed</Text>
-                </View>
-              ) : (
-                <>
-                  <View style={styles.slotsGrid}>{renderSlots()}</View>
-                  <View style={styles.progressRow}>
-                    <Text style={styles.progressLabel}>FILLED</Text>
-                    <View style={styles.progressTrack}>
-                      <View style={[
-                        styles.progressFill,
-                        { width: `${Math.round((scheduledExercises.length / MAX_SLOTS) * 100)}%` as any },
-                      ]} />
-                    </View>
-                    <Text style={styles.progressCount}>
-                      {scheduledExercises.length}/{MAX_SLOTS}
-                    </Text>
+                <View style={styles.slotsPanelHeader}>
+                  <View>
+                    <Text style={styles.slotsLabel}>SLOTS</Text>
+                    <Text style={styles.slotsHint}>Tap a slot to remove it</Text>
                   </View>
-                </>
-              )}
+                  <TouchableOpacity
+                    onPress={toggleRestDay}
+                    style={[
+                      styles.restDayBtn,
+                      restDays.has(activeDay) && styles.restDayBtnActive,
+                    ]}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[
+                      styles.restDayBtnText,
+                      restDays.has(activeDay) && styles.restDayBtnTextActive,
+                    ]}>
+                      {restDays.has(activeDay) ? "✓ Rest day" : "Rest day"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {restDays.has(activeDay) ? (
+                  <View style={styles.restDayInfo}>
+                    <MaterialCommunityIcons name="sleep" size={18} color={C.textTertiary} />
+                    <Text style={styles.restDayInfoText}>Marked as rest day — no exercises needed</Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.slotsGrid}>{renderSlots()}</View>
+                    <View style={styles.progressRow}>
+                      <Text style={styles.progressLabel}>FILLED</Text>
+                      <View style={styles.progressTrack}>
+                        <View style={[
+                          styles.progressFill,
+                          { width: `${Math.round((scheduledExercises.length / MAX_SLOTS) * 100)}%` as any },
+                        ]} />
+                      </View>
+                      <Text style={styles.progressCount}>
+                        {scheduledExercises.length}/{MAX_SLOTS}
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </LinearGradient>
             </View>
+
+            {/* Section divider */}
+            <LinearGradient
+              colors={["transparent", "rgba(255,255,255,0.08)", "transparent"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.sectionDivider}
+            />
 
             {/* Exercise bank */}
             <View style={styles.bankHeader}>
               <View>
-                <Text style={styles.bankLabel}>EXERCISE BANK</Text>
+                <Text style={styles.bankEyebrow}>EXERCISE BANK</Text>
                 <Text style={styles.bankHint}>Tap an exercise to add it to this day</Text>
               </View>
               <Text style={styles.bankCount}>{bankExercises.length} exercises</Text>
@@ -424,42 +459,73 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Day tabs
-  tabsRow: { gap: 3, paddingBottom: 0 },
-  dayTab: {
-    backgroundColor: C.bgSurface1,
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderWidth: 1.5,
-    borderColor: C.bgSurface2,
-    borderBottomWidth: 0,
-    marginRight: 3,
+  // ── Day selector pills ────────────────────────────────────────────────────
+  pillsRow: {
+    gap: 8,
+    paddingVertical: 4,
+    marginBottom: 14,
   },
-  dayTabActive: { borderColor: C.accentYellow },
-  dayTabText: { fontSize: 13, fontWeight: "600", color: C.textTertiary },
-  dayTabTextActive: { color: C.accentYellow },
-  dayTabDot: {
+  dayPill: {
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: 100,
+    backgroundColor: C.bgSurface1,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  dayPillActive: {
+    backgroundColor: C.accentYellow,
+    borderColor: C.accentYellow,
+  },
+  dayPillRest: {
+    backgroundColor: "transparent",
+    borderStyle: "dashed",
+    borderColor: C.bgSurface3,
+  },
+  dayPillText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: C.textSecondary,
+  },
+  dayPillTextActive: {
+    color: C.bgBlack,
+  },
+  dayPillTextRest: {
+    color: C.textTertiary,
+  },
+  dayPillDot: {
     width: 5,
     height: 5,
     borderRadius: 3,
-    marginTop: 4,
-    alignSelf: "center",
+    backgroundColor: C.bgSurface3,
+  },
+  dayPillDotFilled: {
+    backgroundColor: "#3DCC88",
+  },
+  dayPillDotActive: {
+    backgroundColor: "rgba(0,0,0,0.3)",
   },
 
-  // Day panel
-  dayPanel: {
-    backgroundColor: C.bgSurface1,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 12,
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
+  // ── Day panel — gradient focal card ──────────────────────────────────────
+  // Outer wrapper carries the shadow/glow; inner LinearGradient clips content.
+  dayPanelShadow: {
+    borderRadius: 16,
     borderWidth: 1.5,
     borderColor: C.accentYellow,
-    borderTopWidth: 0,
+    marginBottom: 8,
+    shadowColor: C.accentYellow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  dayPanel: {
+    borderRadius: 14,
+    overflow: "hidden",
     padding: 16,
-    marginBottom: 20,
   },
   dayNameInput: {
     backgroundColor: C.bgBlack,
@@ -516,11 +582,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  // ── Slots grid ────────────────────────────────────────────────────────────
   slotsGrid: { gap: 8 },
   slotRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
   slotFilled: {
     flex: 1,
-    backgroundColor: C.bgSurface1,
     borderRadius: 12,
     borderWidth: 1.5,
     padding: 8,
@@ -560,7 +626,7 @@ const styles = StyleSheet.create({
   },
   slotPadding: { flex: 1 },
 
-  // Progress bar
+  // ── Progress bar ──────────────────────────────────────────────────────────
   progressRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -570,8 +636,9 @@ const styles = StyleSheet.create({
   progressLabel: {
     fontSize: 10,
     color: C.textTertiary,
-    letterSpacing: 0.5,
-    fontWeight: "600",
+    letterSpacing: 1.5,
+    fontWeight: "700",
+    textTransform: "uppercase",
   },
   progressTrack: {
     flex: 1,
@@ -586,32 +653,39 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   progressCount: {
-    fontSize: 10,
+    fontSize: 12,
     color: C.accentYellow,
-    fontWeight: "600",
+    fontWeight: "700",
     minWidth: 28,
     textAlign: "right",
   },
 
-  // Bank
+  // ── Section divider ───────────────────────────────────────────────────────
+  sectionDivider: {
+    height: 1,
+    marginVertical: 20,
+    marginHorizontal: -20,
+  },
+
+  // ── Exercise bank ─────────────────────────────────────────────────────────
   bankHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  bankLabel: {
-    fontSize: 11,
+  bankEyebrow: {
+    fontSize: 10,
     fontWeight: "700",
-    color: C.textSecondary,
+    color: C.textTertiary,
     letterSpacing: 1.5,
     textTransform: "uppercase",
   },
   bankHint: {
-    fontSize: 10,
-    color: C.textTertiary,
-    marginTop: 3,
-    fontWeight: "500",
+    fontSize: 13,
+    color: C.textSecondary,
+    marginTop: 4,
+    fontWeight: "600",
   },
   bankCount: { fontSize: 11, color: C.textSecondary },
   filterChips: { marginBottom: 12 },
@@ -628,25 +702,26 @@ const styles = StyleSheet.create({
   filterChipText: { fontSize: 13, fontWeight: "600", color: C.textTertiary },
   filterChipTextSelected: { color: C.accentYellow },
 
+  // ── Bank cards — matching exercises.tsx grid card proportions ─────────────
   bankRow: { flexDirection: "row", gap: 10, marginBottom: 10 },
   bankCardWrapper: { flex: 1 },
   bankCardWrapperAssigned: { opacity: 0.45 },
   bankCard: {
     flex: 1,
     backgroundColor: C.bgSurface1,
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: "hidden",
   },
   bankCardPlaceholder: { flex: 1 },
   bankCardTop: {
-    height: 60,
+    height: 72,
     justifyContent: "center",
     alignItems: "center",
   },
   bankIconTile: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 13,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -671,7 +746,17 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   bankTagTextAlt: { fontSize: 9, fontWeight: "700", color: C.textSecondary },
-  bankPr: { fontSize: 9, color: C.textTertiary, marginTop: 5 },
+  bankPrBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
+    marginTop: 5,
+    alignSelf: "flex-start",
+  },
+  bankPrText: { fontSize: 9, fontWeight: "700" },
 
   emptyBank: { paddingVertical: 32, alignItems: "center", gap: 8 },
   emptyBankText: {
