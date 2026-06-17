@@ -20,13 +20,15 @@ export const C = {
   accentOrangeBg: '#2a1d10',
 } as const;
 
-export const PRESET_COLORS = ['#FFD944', '#84BFCB', '#D6822E'] as const;
+export const PRESET_COLORS = ['#FFD944', '#84BFCB', '#D6822E', '#FF4DA6', '#50FA7B'] as const;
 export type PresetColor = (typeof PRESET_COLORS)[number];
 
 const TILE_BG_MAP: Record<string, string> = {
   '#FFD944': '#2a2510',
   '#84BFCB': '#102426',
   '#D6822E': '#2a1d10',
+  '#FF4DA6': '#240b17',
+  '#50FA7B': '#0b2311',
 };
 
 export function getExerciseTileBg(color: string): string {
