@@ -17,6 +17,7 @@ type ExerciseRow = {
   muscle_tag: string | null;
   type_tag: string | null;
   emoji: string | null;
+  color?: string | null;
   created_at: string;
   set_entries: SetEntryRow[] | null;
 };
@@ -62,6 +63,7 @@ function rowToExercise(row: ExerciseRow): Exercise {
     ...(row.muscle_tag != null && { muscleTag: row.muscle_tag }),
     ...(row.type_tag != null && { typeTag: row.type_tag }),
     ...(row.emoji != null && { emoji: row.emoji }),
+    color: row.color ?? '#FFD944',
   };
 }
 
@@ -109,6 +111,7 @@ export const addExercise = async (
   muscleTag?: string,
   typeTag?: string,
   emoji?: string,
+  color?: string,
 ): Promise<string> => {
   const { data: existing } = await supabase
     .from("exercises")
@@ -129,6 +132,7 @@ export const addExercise = async (
       ...(muscleTag !== undefined && { muscle_tag: muscleTag }),
       ...(typeTag !== undefined && { type_tag: typeTag }),
       ...(emoji !== undefined && { emoji }),
+      ...(color !== undefined && { color }),
     })
     .select("id")
     .single();
@@ -139,13 +143,14 @@ export const addExercise = async (
 export const updateExercise = async (
   userId: string,
   exerciseId: string,
-  updates: Partial<Pick<Exercise, "name" | "sets" | "reps" | "emoji">>,
+  updates: Partial<Pick<Exercise, "name" | "sets" | "reps" | "emoji" | "color">>,
 ): Promise<void> => {
   const mapped: Record<string, unknown> = {};
   if (updates.name !== undefined) mapped.name = updates.name;
   if (updates.sets !== undefined) mapped.target_sets = Math.min(updates.sets, MAX_SETS);
   if (updates.reps !== undefined) mapped.target_reps = Math.min(updates.reps, MAX_REPS);
   if (updates.emoji !== undefined) mapped.emoji = updates.emoji;
+  if (updates.color !== undefined) mapped.color = updates.color;
 
   const { error } = await supabase
     .from("exercises")

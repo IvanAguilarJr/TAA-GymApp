@@ -35,6 +35,7 @@ import { Dimensions } from "react-native";
 import { useWeightUnit } from "@/app/context/WeightUnitContext";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import AppBottomSheet from "@/components/AppBottomSheet";
+import { C, PRESET_COLORS } from "@/lib/colors";
 
 
 type SetInputRow = {
@@ -63,6 +64,7 @@ export default function ExerciseDetail() {
   const [editSets, setEditSets] = useState("");
   const [editReps, setEditReps] = useState("");
   const [editEmoji, setEditEmoji] = useState<string>("💪");
+  const [editColor, setEditColor] = useState<string>(C.accentYellow);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [editNameFocused, setEditNameFocused] = useState(false);
   const [editSetsFocused, setEditSetsFocused] = useState(false);
@@ -187,6 +189,7 @@ export default function ExerciseDetail() {
     setEditSets(String(exercise.sets));
     setEditReps(String(exercise.reps));
     setEditEmoji(exercise.emoji ?? "💪");
+    setEditColor(exercise.color ?? C.accentYellow);
     setShowEmojiPicker(false);
     editSheetRef.current?.present();
   };
@@ -217,6 +220,7 @@ export default function ExerciseDetail() {
         sets: setsNum,
         reps: repsNum,
         emoji: editEmoji,
+        color: editColor,
       });
       editSheetRef.current?.dismiss(); // ← was incorrectly .present() before
       await fetchExercise();
@@ -793,6 +797,26 @@ export default function ExerciseDetail() {
               ))}
             </View>
           )}
+
+          {/* Color swatches */}
+          <Text style={styles.fieldLabel}>COLOR</Text>
+          <View style={{ flexDirection: "row", gap: 12, marginBottom: 8 }}>
+            {PRESET_COLORS.map((color) => (
+              <TouchableOpacity
+                key={color}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: color,
+                  borderWidth: editColor === color ? 3 : 0,
+                  borderColor: C.textPrimary,
+                }}
+                onPress={() => setEditColor(color)}
+                activeOpacity={0.8}
+              />
+            ))}
+          </View>
 
           <Text style={styles.fieldLabel}>EXERCISE NAME</Text>
           <TextInput

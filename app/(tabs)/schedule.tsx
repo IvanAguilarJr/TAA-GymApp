@@ -16,18 +16,23 @@ import { getExercises, updateExerciseDays } from "@/supabase/exercises";
 import { Exercise, Day } from "@/lib/types";
 import { useFocusEffect } from "expo-router";
 import { useWeightUnit } from "@/app/context/WeightUnitContext";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { C, getExerciseTileBg } from "@/lib/colors";
 
 const TRAINING_DAYS: Day[] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MUSCLE_FILTERS = [
-  "All", "Chest", "Back", "Legs", "Shoulders", "Biceps", "Triceps", "Glutes", "Core",
-];
+const MUSCLE_FILTERS = ["All", "Chest", "Back", "Legs", "Shoulders", "Biceps", "Triceps", "Glutes", "Core"];
 const MAX_SLOTS = 12;
 
 type CardAnim = { opacity: Animated.Value; scale: Animated.Value; translateY: Animated.Value };
 
+function getExerciseIcon(exercise: Exercise): keyof typeof MaterialCommunityIcons.glyphMap {
+  const muscle = exercise.muscleTag?.toLowerCase() ?? "";
+  if (muscle === "legs" || muscle === "glutes") return "run-fast";
+  return "dumbbell";
+}
+
 export default function Schedule() {
   const [userId, setUserId] = useState("");
-
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeDay, setActiveDay] = useState<Day>("Mon");
@@ -37,7 +42,6 @@ export default function Schedule() {
   const [restDays, setRestDays] = useState<Set<Day>>(new Set());
 
   const { format } = useWeightUnit();
-
   const cardAnims = useRef<Record<string, CardAnim>>({});
 
   const getCardAnim = (id: string): CardAnim => {
@@ -66,14 +70,9 @@ export default function Schedule() {
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchExercises();
-    }, []),
-  );
+  useFocusEffect(useCallback(() => { fetchExercises(); }, []));
 
-  const scheduledForDay = (day: Day) =>
-    exercises.filter((e) => e.days?.includes(day));
+  const scheduledForDay = (day: Day) => exercises.filter((e) => e.days?.includes(day));
 
   const toggleRestDay = () => {
     setRestDays((prev) => {
@@ -95,28 +94,11 @@ export default function Schedule() {
 
     Animated.parallel([
       Animated.sequence([
-        Animated.spring(anim.scale, {
-          toValue: 1.08,
-          useNativeDriver: true,
-          tension: 300,
-          friction: 10,
-        }),
-        Animated.timing(anim.scale, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
+        Animated.spring(anim.scale, { toValue: 1.08, useNativeDriver: true, tension: 300, friction: 10 }),
+        Animated.timing(anim.scale, { toValue: 0, duration: 250, useNativeDriver: true }),
       ]),
-      Animated.timing(anim.opacity, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(anim.translateY, {
-        toValue: -20,
-        duration: 300,
-        useNativeDriver: true,
-      }),
+      Animated.timing(anim.opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+      Animated.timing(anim.translateY, { toValue: -20, duration: 300, useNativeDriver: true }),
     ]).start(async () => {
       const newDays = [...(exercise.days ?? []), activeDay];
       await updateExerciseDays(userId, exercise.id, newDays);
@@ -147,47 +129,43 @@ export default function Schedule() {
   const renderSlots = () => {
     const filled = scheduledExercises;
     const totalSlots = Math.min(filled.length + (filled.length < MAX_SLOTS ? 1 : 0), MAX_SLOTS);
-
     const slots: JSX.Element[] = [];
 
     for (let i = 0; i < totalSlots; i++) {
       const exercise = filled[i];
       if (exercise) {
+        const exColor = exercise.color ?? C.accentYellow;
         slots.push(
-          <View key={exercise.id} style={styles.slotFilled}>
-            <Text style={styles.slotEmoji}>
-              {exercise.emoji ?? exercise.name.charAt(0).toUpperCase()}
-            </Text>
-            <Text style={styles.slotName} numberOfLines={1}>
+          <TouchableOpacity
+            key={exercise.id}
+            style={[styles.slotFilled, { borderColor: exColor }]}
+            onPress={() => removeFromDay(exercise)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.slotIconTile, { backgroundColor: getExerciseTileBg(exColor) }]}>
+              <MaterialCommunityIcons name={getExerciseIcon(exercise)} size={14} color={exColor} />
+            </View>
+            <Text style={[styles.slotName, { color: exColor }]} numberOfLines={1}>
               {exercise.name.length > 8 ? exercise.name.slice(0, 8) + "…" : exercise.name}
             </Text>
             {exercise.muscleTag ? (
-              <View style={styles.slotTag}>
-                <Text style={styles.slotTagText}>{exercise.muscleTag}</Text>
+              <View style={[styles.slotTag, { backgroundColor: exColor + "22" }]}>
+                <Text style={[styles.slotTagText, { color: exColor }]}>{exercise.muscleTag}</Text>
               </View>
             ) : null}
-            <TouchableOpacity
-              onPress={() => removeFromDay(exercise)}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              style={styles.slotRemoveBtn}
-            >
-              <Text style={styles.slotRemove}>×</Text>
-            </TouchableOpacity>
-          </View>,
+          </TouchableOpacity>,
         );
       } else {
         slots.push(
           <View key="empty-next" style={styles.slotEmpty}>
-            <Text style={styles.slotPlus}>+</Text>
+            <MaterialCommunityIcons name="plus" size={18} color={C.bgSurface3} />
           </View>,
         );
       }
     }
 
     const rows: JSX.Element[][] = [];
-    for (let i = 0; i < slots.length; i += 4) {
-      rows.push(slots.slice(i, i + 4));
-    }
+    for (let i = 0; i < slots.length; i += 4) rows.push(slots.slice(i, i + 4));
 
     return (
       <>
@@ -208,7 +186,7 @@ export default function Schedule() {
     const anim = getCardAnim(exercise.id);
     const isAssigned = exercise.days?.includes(activeDay) ?? false;
     const disabled = isAssigned || slotsFull;
-    const initial = exercise.name.charAt(0).toUpperCase();
+    const exColor = exercise.color ?? C.accentYellow;
 
     return (
       <Animated.View
@@ -229,21 +207,17 @@ export default function Schedule() {
           activeOpacity={0.7}
           disabled={disabled}
         >
-          <View style={styles.bankCardTop}>
-            {exercise.emoji ? (
-              <Text style={{ fontSize: 28 }}>{exercise.emoji}</Text>
-            ) : (
-              <Text style={styles.bankCardInitial}>{initial}</Text>
-            )}
+          <View style={[styles.bankCardTop, { backgroundColor: getExerciseTileBg(exColor) }]}>
+            <View style={[styles.bankIconTile, { backgroundColor: getExerciseTileBg(exColor) }]}>
+              <MaterialCommunityIcons name={getExerciseIcon(exercise)} size={24} color={exColor} />
+            </View>
           </View>
           <View style={styles.bankCardBody}>
-            <Text style={styles.bankCardName} numberOfLines={2}>
-              {exercise.name}
-            </Text>
+            <Text style={styles.bankCardName} numberOfLines={2}>{exercise.name}</Text>
             <View style={styles.bankTagRow}>
               {exercise.muscleTag && (
-                <View style={styles.bankTagChip}>
-                  <Text style={styles.bankTagText}>{exercise.muscleTag}</Text>
+                <View style={[styles.bankTagChip, { backgroundColor: exColor + "22" }]}>
+                  <Text style={[styles.bankTagText, { color: exColor }]}>{exercise.muscleTag}</Text>
                 </View>
               )}
               {exercise.typeTag && (
@@ -253,9 +227,7 @@ export default function Schedule() {
               )}
             </View>
             {exercise.maxWeight > 0 && (
-              <Text style={{ fontSize: 9, color: "#555555", marginTop: 5 }}>
-                PR: {format(exercise.maxWeight)} · {exercise.sets}×{exercise.reps}
-              </Text>
+              <Text style={styles.bankPr}>PR: {format(exercise.maxWeight)} · {exercise.sets}×{exercise.reps}</Text>
             )}
           </View>
         </TouchableOpacity>
@@ -292,11 +264,11 @@ export default function Schedule() {
 
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#FFD944" />
+            <ActivityIndicator size="large" color={C.accentYellow} />
           </View>
         ) : (
           <>
-            {/* Day folder tabs */}
+            {/* Day selector tabs */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -313,26 +285,14 @@ export default function Schedule() {
                     onPress={() => setActiveDay(day)}
                     activeOpacity={0.7}
                   >
-                    <Text
-                      style={[
-                        styles.dayTabText,
-                        isActive && styles.dayTabTextActive,
-                      ]}
-                    >
+                    <Text style={[styles.dayTabText, isActive && styles.dayTabTextActive]}>
                       {day}
-                      {isRest ? " 😴" : count > 0 ? ` · ${count}` : ""}
+                      {isRest ? " ·  rest" : count > 0 ? ` · ${count}` : ""}
                     </Text>
-                    <View
-                      style={{
-                        width: 5,
-                        height: 5,
-                        borderRadius: 3,
-                        backgroundColor:
-                          count > 0 || isRest ? "#FFD944" : "#1e1e1e",
-                        marginTop: 4,
-                        alignSelf: "center",
-                      }}
-                    />
+                    <View style={[
+                      styles.dayTabDot,
+                      { backgroundColor: count > 0 || isRest ? C.accentYellow : C.bgSurface3 },
+                    ]} />
                   </TouchableOpacity>
                 );
               })}
@@ -343,51 +303,50 @@ export default function Schedule() {
               <TextInput
                 style={styles.dayNameInput}
                 value={dayNames[activeDay] ?? ""}
-                onChangeText={(text) =>
-                  setDayNames((prev) => ({ ...prev, [activeDay]: text }))
-                }
+                onChangeText={(text) => setDayNames((prev) => ({ ...prev, [activeDay]: text }))}
                 placeholder="Name this day (e.g. Chest Day)"
-                placeholderTextColor="#333333"
+                placeholderTextColor={C.textTertiary}
               />
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                <Text style={styles.slotsLabel}>SLOTS</Text>
+
+              <View style={styles.slotsPanelHeader}>
+                <View>
+                  <Text style={styles.slotsLabel}>SLOTS</Text>
+                  <Text style={styles.slotsHint}>Tap a slot to remove it</Text>
+                </View>
                 <TouchableOpacity
                   onPress={toggleRestDay}
-                  style={{
-                    backgroundColor: restDays.has(activeDay) ? "#1a0000" : "#000000",
-                    borderRadius: 8,
-                    paddingHorizontal: 10,
-                    paddingVertical: 5,
-                    borderWidth: 1,
-                    borderColor: restDays.has(activeDay) ? "#EF4444" : "#222222",
-                  }}
+                  style={[
+                    styles.restDayBtn,
+                    restDays.has(activeDay) && styles.restDayBtnActive,
+                  ]}
                   activeOpacity={0.8}
                 >
-                  <Text style={{ fontSize: 11, color: restDays.has(activeDay) ? "#EF4444" : "#555555", fontWeight: "600" }}>
+                  <Text style={[
+                    styles.restDayBtnText,
+                    restDays.has(activeDay) && styles.restDayBtnTextActive,
+                  ]}>
                     {restDays.has(activeDay) ? "✓ Rest day" : "Rest day"}
                   </Text>
                 </TouchableOpacity>
               </View>
 
               {restDays.has(activeDay) ? (
-                <View style={{ backgroundColor: "#1a0000", borderRadius: 10, padding: 14, flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  <Text style={{ fontSize: 20 }}>😴</Text>
-                  <Text style={{ fontSize: 13, color: "#EF4444", fontWeight: "500" }}>Marked as rest day — no exercises needed</Text>
+                <View style={styles.restDayInfo}>
+                  <MaterialCommunityIcons name="sleep" size={18} color={C.textTertiary} />
+                  <Text style={styles.restDayInfoText}>Marked as rest day — no exercises needed</Text>
                 </View>
               ) : (
                 <>
                   <View style={styles.slotsGrid}>{renderSlots()}</View>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 }}>
-                    <Text style={{ fontSize: 10, color: "#555555", letterSpacing: 0.5, fontWeight: "600" }}>FILLED</Text>
-                    <View style={{ flex: 1, height: 3, backgroundColor: "#222222", borderRadius: 2, overflow: "hidden" }}>
-                      <View style={{
-                        height: 3,
-                        backgroundColor: "#FFD944",
-                        borderRadius: 2,
-                        width: `${Math.round((scheduledExercises.length / MAX_SLOTS) * 100)}%`,
-                      }} />
+                  <View style={styles.progressRow}>
+                    <Text style={styles.progressLabel}>FILLED</Text>
+                    <View style={styles.progressTrack}>
+                      <View style={[
+                        styles.progressFill,
+                        { width: `${Math.round((scheduledExercises.length / MAX_SLOTS) * 100)}%` as any },
+                      ]} />
                     </View>
-                    <Text style={{ fontSize: 10, color: "#FFD944", fontWeight: "600", minWidth: 28, textAlign: "right" }}>
+                    <Text style={styles.progressCount}>
                       {scheduledExercises.length}/{MAX_SLOTS}
                     </Text>
                   </View>
@@ -396,9 +355,12 @@ export default function Schedule() {
             </View>
 
             {/* Exercise bank */}
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <Text style={styles.bankLabel}>EXERCISE BANK</Text>
-              <Text style={{ fontSize: 11, color: "#555555" }}>{bankExercises.length} exercises</Text>
+            <View style={styles.bankHeader}>
+              <View>
+                <Text style={styles.bankLabel}>EXERCISE BANK</Text>
+                <Text style={styles.bankHint}>Tap an exercise to add it to this day</Text>
+              </View>
+              <Text style={styles.bankCount}>{bankExercises.length} exercises</Text>
             </View>
 
             <ScrollView
@@ -410,19 +372,11 @@ export default function Schedule() {
               {MUSCLE_FILTERS.map((f) => (
                 <TouchableOpacity
                   key={f}
-                  style={[
-                    styles.filterChip,
-                    muscleFilter === f && styles.filterChipSelected,
-                  ]}
+                  style={[styles.filterChip, muscleFilter === f && styles.filterChipSelected]}
                   onPress={() => setMuscleFilter(f)}
                   activeOpacity={0.7}
                 >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      muscleFilter === f && styles.filterChipTextSelected,
-                    ]}
-                  >
+                  <Text style={[styles.filterChipText, muscleFilter === f && styles.filterChipTextSelected]}>
                     {f}
                   </Text>
                 </TouchableOpacity>
@@ -431,16 +385,14 @@ export default function Schedule() {
 
             {exercises.length === 0 ? (
               <View style={styles.emptyBank}>
-                <Text style={styles.emptyBankIcon}>🏋️</Text>
+                <MaterialCommunityIcons name="dumbbell" size={36} color={C.textTertiary} />
                 <Text style={styles.emptyBankText}>
                   No exercises yet. Add some in the Exercises tab.
                 </Text>
               </View>
             ) : bankExercises.length === 0 ? (
               <View style={styles.emptyBank}>
-                <Text style={styles.emptyBankText}>
-                  No exercises match this filter.
-                </Text>
+                <Text style={styles.emptyBankText}>No exercises match this filter.</Text>
               </View>
             ) : (
               <View>{renderBankGrid()}</View>
@@ -453,7 +405,7 @@ export default function Schedule() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#000000" },
+  safe: { flex: 1, backgroundColor: C.bgBlack },
   scroll: { flex: 1 },
   container: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
   loadingBox: { paddingVertical: 60, alignItems: "center" },
@@ -462,205 +414,269 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 26,
     fontWeight: "700",
-    color: "#FFD944",
+    color: C.textPrimary,
     letterSpacing: -0.5,
   },
   headerSub: {
     fontSize: 13,
-    color: "#555555",
+    color: C.textSecondary,
     fontWeight: "500",
     marginTop: 2,
   },
 
-  // Day folder tabs
+  // Day tabs
   tabsRow: { gap: 3, paddingBottom: 0 },
   dayTab: {
-    backgroundColor: "#111111",
+    backgroundColor: C.bgSurface1,
     borderTopLeftRadius: 10,
     borderTopRightRadius: 10,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderWidth: 1.5,
-    borderColor: "#222222",
+    borderColor: C.bgSurface2,
     borderBottomWidth: 0,
     marginRight: 3,
   },
-  dayTabActive: { borderColor: "#FFD944" },
-  dayTabText: { fontSize: 13, fontWeight: "600", color: "#555555" },
-  dayTabTextActive: { color: "#FFD944" },
+  dayTabActive: { borderColor: C.accentYellow },
+  dayTabText: { fontSize: 13, fontWeight: "600", color: C.textTertiary },
+  dayTabTextActive: { color: C.accentYellow },
+  dayTabDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    marginTop: 4,
+    alignSelf: "center",
+  },
 
   // Day panel
   dayPanel: {
-    backgroundColor: "#111111",
+    backgroundColor: C.bgSurface1,
     borderTopLeftRadius: 0,
     borderTopRightRadius: 12,
     borderBottomLeftRadius: 12,
     borderBottomRightRadius: 12,
     borderWidth: 1.5,
-    borderColor: "#FFD944",
+    borderColor: C.accentYellow,
     borderTopWidth: 0,
     padding: 16,
     marginBottom: 20,
   },
   dayNameInput: {
-    backgroundColor: "#000000",
+    backgroundColor: C.bgBlack,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
     fontSize: 13,
-    color: "#FFD944",
+    color: C.textPrimary,
     marginBottom: 14,
+  },
+  slotsPanelHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 12,
   },
   slotsLabel: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#555555",
+    color: C.textSecondary,
     letterSpacing: 1.5,
     textTransform: "uppercase",
-    marginBottom: 8,
   },
+  slotsHint: {
+    fontSize: 10,
+    color: C.textTertiary,
+    marginTop: 3,
+    fontWeight: "500",
+  },
+  restDayBtn: {
+    backgroundColor: C.bgBlack,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: C.bgSurface3,
+  },
+  restDayBtnActive: { backgroundColor: "#1a0000", borderColor: "#EF4444" },
+  restDayBtnText: { fontSize: 11, color: C.textTertiary, fontWeight: "600" },
+  restDayBtnTextActive: { color: "#EF4444" },
+
+  restDayInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: C.bgBlack,
+    borderRadius: 10,
+    padding: 14,
+  },
+  restDayInfoText: {
+    fontSize: 13,
+    color: C.textSecondary,
+    fontWeight: "500",
+    flex: 1,
+  },
+
   slotsGrid: { gap: 8 },
   slotRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
   slotFilled: {
     flex: 1,
-    backgroundColor: "#111111",
+    backgroundColor: C.bgSurface1,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: "#FFD944",
     padding: 8,
     minHeight: 72,
     alignItems: "center",
     justifyContent: "center",
-    position: "relative",
   },
-  slotEmoji: {
-    fontSize: 20,
+  slotIconTile: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 4,
-    textAlign: "center",
   },
   slotName: {
     fontSize: 9,
     fontWeight: "700",
-    color: "#FFD944",
     textAlign: "center",
     marginBottom: 3,
   },
   slotTag: {
-    backgroundColor: "#FFD944",
     borderRadius: 4,
     paddingHorizontal: 5,
     paddingVertical: 1,
   },
-  slotTagText: {
-    fontSize: 8,
-    fontWeight: "700",
-    color: "#000000",
-  },
-  slotRemoveBtn: {
-    position: "absolute",
-    top: 4,
-    right: 6,
-  },
-  slotRemove: {
-    fontSize: 13,
-    color: "#555555",
-    fontWeight: "700",
-    lineHeight: 16,
-  },
+  slotTagText: { fontSize: 8, fontWeight: "700" },
   slotEmpty: {
     flex: 1,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: "#2a2a2a",
+    borderColor: C.bgSurface3,
     borderStyle: "dashed",
     minHeight: 72,
     justifyContent: "center",
     alignItems: "center",
   },
-  slotPlus: {
-    fontSize: 20,
-    color: "#2a2a2a",
-    fontWeight: "700",
+  slotPadding: { flex: 1 },
+
+  // Progress bar
+  progressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
   },
-  slotPadding: {
+  progressLabel: {
+    fontSize: 10,
+    color: C.textTertiary,
+    letterSpacing: 0.5,
+    fontWeight: "600",
+  },
+  progressTrack: {
     flex: 1,
+    height: 4,
+    backgroundColor: C.bgSurface3,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: 4,
+    backgroundColor: C.accentYellow,
+    borderRadius: 2,
+  },
+  progressCount: {
+    fontSize: 10,
+    color: C.accentYellow,
+    fontWeight: "600",
+    minWidth: 28,
+    textAlign: "right",
   },
 
-  // Exercise bank
+  // Bank
+  bankHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 10,
+  },
   bankLabel: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#555555",
+    color: C.textSecondary,
     letterSpacing: 1.5,
     textTransform: "uppercase",
   },
+  bankHint: {
+    fontSize: 10,
+    color: C.textTertiary,
+    marginTop: 3,
+    fontWeight: "500",
+  },
+  bankCount: { fontSize: 11, color: C.textSecondary },
   filterChips: { marginBottom: 12 },
   filterChipsContent: { gap: 8, paddingHorizontal: 2 },
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: "#111111",
+    backgroundColor: C.bgSurface1,
     borderWidth: 1.5,
     borderColor: "transparent",
   },
-  filterChipSelected: { borderColor: "#FFD944" },
-  filterChipText: { fontSize: 13, fontWeight: "600", color: "#555555" },
-  filterChipTextSelected: { color: "#FFD944" },
+  filterChipSelected: { borderColor: C.accentYellow },
+  filterChipText: { fontSize: 13, fontWeight: "600", color: C.textTertiary },
+  filterChipTextSelected: { color: C.accentYellow },
 
   bankRow: { flexDirection: "row", gap: 10, marginBottom: 10 },
   bankCardWrapper: { flex: 1 },
-  bankCardWrapperAssigned: { opacity: 0.35 },
+  bankCardWrapperAssigned: { opacity: 0.45 },
   bankCard: {
     flex: 1,
-    backgroundColor: "#111111",
+    backgroundColor: C.bgSurface1,
     borderRadius: 12,
     overflow: "hidden",
-    borderWidth: 1.5,
-    borderColor: "transparent",
   },
   bankCardPlaceholder: { flex: 1 },
   bankCardTop: {
-    backgroundColor: "#000000",
     height: 60,
     justifyContent: "center",
     alignItems: "center",
   },
-  bankCardInitial: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#FFD944",
+  bankIconTile: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
   },
   bankCardBody: { padding: 10 },
   bankCardName: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#FFD944",
+    color: C.textPrimary,
     marginBottom: 6,
   },
   bankTagRow: { flexDirection: "row", gap: 4, flexWrap: "wrap" },
   bankTagChip: {
-    backgroundColor: "#FFD944",
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
-  bankTagText: { fontSize: 9, fontWeight: "700", color: "#000000" },
+  bankTagText: { fontSize: 9, fontWeight: "700" },
   bankTagChipAlt: {
-    backgroundColor: "#222222",
+    backgroundColor: C.bgSurface3,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
-  bankTagTextAlt: { fontSize: 9, fontWeight: "700", color: "#FFD944" },
+  bankTagTextAlt: { fontSize: 9, fontWeight: "700", color: C.textSecondary },
+  bankPr: { fontSize: 9, color: C.textTertiary, marginTop: 5 },
 
   emptyBank: { paddingVertical: 32, alignItems: "center", gap: 8 },
-  emptyBankIcon: { fontSize: 36 },
   emptyBankText: {
     fontSize: 14,
-    color: "#555555",
+    color: C.textSecondary,
     fontWeight: "500",
     textAlign: "center",
   },

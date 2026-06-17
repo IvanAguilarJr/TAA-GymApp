@@ -43,6 +43,26 @@ export const saveDayNote = async (
   if (error) throw new Error(error.message);
 };
 
+export const getLatestNote = async (userId: string): Promise<DayNote | null> => {
+  const { data, error } = await supabase
+    .from("notes")
+    .select("date, text, created_at, updated_at")
+    .eq("user_id", userId)
+    .order("date", { ascending: false })
+    .limit(1)
+    .single();
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw new Error(error.message);
+  }
+  return {
+    date: data.date,
+    text: data.text,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+};
+
 export const getAllNotes = async (userId: string): Promise<DayNote[]> => {
   const { data, error } = await supabase
     .from("notes")

@@ -56,4 +56,5 @@ export type Exercise = {
   muscleTag?: string;
   typeTag?: string;
   emoji?: string;
+  color?: string;
 };

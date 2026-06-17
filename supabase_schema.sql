@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS public.exercises (
   muscle_tag   text,
   type_tag     text,
   emoji        text,
+  color        text        NOT NULL DEFAULT '#FFD944',
   created_at   timestamptz NOT NULL DEFAULT now(),
   updated_at   timestamptz NOT NULL DEFAULT now()
 );

@@ -1,10 +1,12 @@
 import { Image } from "expo-image";
 import { supabase } from "@/lib/supabase";
-import { getExercisesByDay, getExercises } from "@/supabase/exercises";
+import { getExercises, getExercisesByDay } from "@/supabase/exercises";
 import { getCurrentStreak, getTodayCompletion } from "@/lib/streaks";
-import { getDayNote, saveDayNote } from "@/supabase/notes";
+import { getLatestNote, saveDayNote } from "@/supabase/notes";
 import { DayNote } from "@/supabase/notes";
 import { Exercise, DAY_MAP, Day } from "@/lib/types";
+import { C, getExerciseTileBg } from "@/lib/colors";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   Text,
   View,
@@ -25,35 +27,23 @@ import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import AppBottomSheet from "@/components/AppBottomSheet";
 
 const DAY_FULL: Record<Day, string> = {
-  Mon: "Monday",
-  Tue: "Tuesday",
-  Wed: "Wednesday",
-  Thu: "Thursday",
-  Fri: "Friday",
-  Sat: "Saturday",
-  Sun: "Sunday",
-  None: "Unscheduled",
+  Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday",
+  Fri: "Friday", Sat: "Saturday", Sun: "Sunday", None: "Unscheduled",
 };
 
-function getRingColors(pct: number) {
-  const on = "#FFD944";
-  const off = "#222222";
-  if (pct <= 0) return { borderTopColor: off, borderRightColor: off, borderBottomColor: off, borderLeftColor: off };
-  if (pct <= 25) return { borderTopColor: on, borderRightColor: off, borderBottomColor: off, borderLeftColor: off };
-  if (pct <= 50) return { borderTopColor: on, borderRightColor: on, borderBottomColor: off, borderLeftColor: off };
-  if (pct <= 75) return { borderTopColor: on, borderRightColor: on, borderBottomColor: on, borderLeftColor: off };
-  return { borderTopColor: on, borderRightColor: on, borderBottomColor: on, borderLeftColor: on };
+const todayStr = new Date().toISOString().split("T")[0];
+
+function formatNoteDate(dateStr: string): string {
+  const parts = dateStr.split("-");
+  const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase();
 }
 
-const REST_MESSAGES = [
-  "Your muscles grow when you rest. 💤",
-  "Recovery is part of the grind. 🔄",
-  "Rest hard. Train harder tomorrow. 🙌",
-  "Even champions take rest days. 🏆",
-  "Sleep. Eat. Recover. Repeat. 💪",
-];
-
-const todayStr = new Date().toISOString().split("T")[0];
+function getTodaySetsCount(exercise: Exercise): number {
+  return exercise.history
+    .filter((e) => e.date.split("T")[0] === todayStr)
+    .reduce((sum, e) => sum + e.sets.length, 0);
+}
 
 export default function Home() {
   const [userId, setUserId] = useState("");
@@ -66,15 +56,16 @@ export default function Home() {
     currentStreak: number;
     todayCompletion: { completed: number; total: number; percentage: number; isRestDay: boolean };
   } | null>(null);
-  const [todayNote, setTodayNote] = useState<DayNote | null>(null);
+  const [latestNote, setLatestNote] = useState<DayNote | null>(null);
   const noteSheetRef = useRef<BottomSheetModal>(null);
   const [noteText, setNoteText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
+  const [editingExistingNote, setEditingExistingNote] = useState(false);
 
   const today: Day = DAY_MAP[new Date().getDay()];
-  const restMessage = REST_MESSAGES[new Date().getDay() % REST_MESSAGES.length];
-
   const { format } = useWeightUnit();
+
+  const isNoteFromToday = latestNote?.date === todayStr;
 
   const fetchData = async () => {
     setLoading(true);
@@ -88,7 +79,7 @@ export default function Home() {
         getExercisesByDay(uid, today),
         getUserProfile(uid),
         getExercises(uid),
-        getDayNote(uid, todayStr),
+        getLatestNote(uid),
       ]);
       setExercises(data);
       if (profile?.displayName) setDisplayName(profile.displayName);
@@ -97,7 +88,7 @@ export default function Home() {
         currentStreak: getCurrentStreak(allExercises),
         todayCompletion: getTodayCompletion(allExercises),
       });
-      setTodayNote(note);
+      setLatestNote(note);
     } catch {
       // fail silently on home screen
     } finally {
@@ -111,8 +102,9 @@ export default function Home() {
     }, []),
   );
 
-  const openNoteModal = () => {
-    setNoteText(todayNote?.text ?? "");
+  const openNoteModal = (mode: "edit" | "new") => {
+    setEditingExistingNote(mode === "edit");
+    setNoteText(mode === "edit" ? (latestNote?.text ?? "") : "");
     noteSheetRef.current?.present();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
@@ -123,7 +115,7 @@ export default function Home() {
     try {
       await saveDayNote(userId, todayStr, noteText.trim());
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setTodayNote({
+      setLatestNote({
         date: todayStr,
         text: noteText.trim(),
         createdAt: new Date().toISOString(),
@@ -150,10 +142,16 @@ export default function Home() {
     return "Good evening";
   };
 
-  const getName = () => {
-    if (displayName) return displayName;
-    return userEmail?.split("@")[0] ?? "User";
+  const getDateSubtitle = () => {
+    const now = new Date();
+    const dayName = DAY_FULL[today];
+    const dateStr = now.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+    return `${dayName} · ${dateStr}`;
   };
+
+  const progressPct = streakData?.todayCompletion.isRestDay
+    ? 0
+    : (streakData?.todayCompletion.percentage ?? 0);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -167,8 +165,8 @@ export default function Home() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>{getGreeting()},</Text>
-            <Text style={styles.emailName}>{getName()}</Text>
+            <Text style={styles.greeting}>{getGreeting()}</Text>
+            <Text style={styles.dateSubtitle}>{getDateSubtitle()}</Text>
           </View>
           <TouchableOpacity
             onPress={() => router.push("/settings")}
@@ -176,185 +174,173 @@ export default function Home() {
             style={styles.avatar}
           >
             {photoURL ? (
-              <Image
-                source={{ uri: photoURL }}
-                style={styles.avatarPhoto}
-                contentFit="cover"
-              />
+              <Image source={{ uri: photoURL }} style={styles.avatarPhoto} contentFit="cover" />
             ) : (
               <Text style={styles.avatarText}>{getInitials()}</Text>
             )}
           </TouchableOpacity>
         </View>
 
-        {/* Streak banner */}
+        {/* Stat tiles */}
         {streakData && (
-          <View style={styles.streakBanner}>
-            <Text style={styles.streakFireEmoji}>🔥</Text>
-            <View style={styles.streakInfo}>
-              <Text style={styles.streakLabel}>STREAK</Text>
-              <Text style={styles.streakDays}>{streakData.currentStreak} days</Text>
+          <View style={styles.statTilesRow}>
+            {/* Streak tile */}
+            <View style={styles.statTile}>
+              <View style={styles.statTileHeader}>
+                <MaterialCommunityIcons name="fire" size={16} color={C.accentOrange} />
+                <Text style={styles.statTileLabel}>STREAK</Text>
+              </View>
+              <Text style={styles.statTileValue}>{streakData.currentStreak}</Text>
+              <Text style={styles.statTileUnit}>day streak</Text>
             </View>
-            {streakData.todayCompletion.isRestDay ? (
-              <View style={styles.streakRingBox}>
-                <Text style={styles.streakRingEmoji}>😴</Text>
-                <Text style={styles.streakRingSmall}>rest day</Text>
+
+            {/* Completion tile */}
+            <View style={styles.statTile}>
+              <View style={styles.statTileHeader}>
+                <MaterialCommunityIcons name="clipboard-check-outline" size={16} color={C.accentBlue} />
+                <Text style={styles.statTileLabel}>TODAY</Text>
               </View>
-            ) : (
-              <View style={[styles.streakRing, getRingColors(streakData.todayCompletion.percentage)]}>
-                <Text style={styles.streakRingPct}>
-                  {streakData.todayCompletion.percentage === 100 ? "✓" : `${streakData.todayCompletion.percentage}%`}
-                </Text>
-                <Text style={styles.streakRingSmall}>today</Text>
-              </View>
-            )}
+              {streakData.todayCompletion.isRestDay ? (
+                <>
+                  <Text style={styles.statTileValue}>—</Text>
+                  <Text style={styles.statTileUnit}>rest day</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.statTileValue}>
+                    {streakData.todayCompletion.completed} of {streakData.todayCompletion.total}
+                  </Text>
+                  <Text style={styles.statTileUnit}>exercises done</Text>
+                </>
+              )}
+            </View>
           </View>
         )}
 
-        {/* Today label */}
-        <View style={styles.todayRow}>
-          <View style={styles.todayBadge}>
-            <Text style={styles.todayBadgeText}>TODAY</Text>
+        {/* Progress bar */}
+        {streakData && (
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${progressPct}%` as any }]} />
           </View>
-          <Text style={styles.todayDay}>{DAY_FULL[today]}</Text>
+        )}
+
+        {/* Exercises section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Exercises</Text>
+          <Text style={styles.sectionCount}>
+            {exercises.length} scheduled
+          </Text>
         </View>
 
-        {/* Workout content */}
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#FFD944" />
+            <ActivityIndicator size="large" color={C.accentYellow} />
           </View>
         ) : exercises.length === 0 ? (
-          /* ── Rest Day ── */
-          <View style={styles.restCard}>
-            <View style={styles.cardAccent} />
-            <Text style={styles.restEmoji}>😴</Text>
-            <Text style={styles.restTitle}>Rest Day</Text>
-            <Text style={styles.restMessage}>{restMessage}</Text>
-            <TouchableOpacity
-              style={styles.scheduleBtn}
-              onPress={() => router.push("/(tabs)/exercises")}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.scheduleBtnText}>
-                Schedule exercises for {DAY_FULL[today]} →
-              </Text>
-            </TouchableOpacity>
+          <View style={styles.restDayRow}>
+            <MaterialCommunityIcons name="sleep" size={18} color={C.textTertiary} />
+            <Text style={styles.restDayText}>
+              {today === "None" ? "No exercises scheduled" : "Rest day — nothing planned"}
+            </Text>
           </View>
         ) : (
-          /* ── Today's Workout ── */
-          <>
-            <View style={styles.workoutCard}>
-              <View style={styles.cardAccent} />
-              <View style={styles.workoutCardHeader}>
-                <Text style={styles.workoutCardTitle}>Today's Workout</Text>
-                <View style={styles.workoutCountBadge}>
-                  <Text style={styles.workoutCountText}>
-                    {exercises.length} exercise{exercises.length !== 1 ? "s" : ""}
-                  </Text>
-                </View>
-              </View>
-
-              {exercises.map((exercise, index) => (
-                <TouchableOpacity
-                  key={exercise.id}
-                  style={[
-                    styles.exerciseRow,
-                    index < exercises.length - 1 && styles.exerciseRowBorder,
-                  ]}
-                  onPress={() => router.push(`/exercise/${exercise.id}`)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.exerciseLeft}>
-                    <View style={styles.exerciseEmojiBox}>
-                      <Text style={styles.exerciseEmoji}>{exercise.emoji ?? "💪"}</Text>
-                    </View>
-                    <View>
-                      <Text style={styles.exerciseName}>{exercise.name}</Text>
-                      <Text style={styles.exerciseMeta}>
-                        {exercise.sets} sets · {exercise.reps} reps
-                      </Text>
-                      {(exercise.muscleTag || exercise.typeTag) && (
-                        <View style={styles.exerciseTagRow}>
-                          {exercise.muscleTag && (
-                            <View style={styles.exTagMuscle}>
-                              <Text style={styles.exTagMuscleText}>{exercise.muscleTag}</Text>
-                            </View>
-                          )}
-                          {exercise.typeTag && (
-                            <View style={styles.exTagType}>
-                              <Text style={styles.exTagTypeText}>{exercise.typeTag}</Text>
-                            </View>
-                          )}
-                        </View>
-                      )}
-                    </View>
+          exercises.map((exercise) => {
+            const todaySets = getTodaySetsCount(exercise);
+            const exColor = exercise.color ?? C.accentYellow;
+            const isNotStarted = todaySets === 0;
+            return (
+              <TouchableOpacity
+                key={exercise.id}
+                style={[styles.exerciseRow, isNotStarted && styles.exerciseRowDimmed]}
+                onPress={() => router.push(`/exercise/${exercise.id}`)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.exerciseColorBar, { backgroundColor: exColor }]} />
+                <View style={styles.exerciseInner}>
+                  <View style={[styles.exerciseIconTile, { backgroundColor: getExerciseTileBg(exColor) }]}>
+                    <MaterialCommunityIcons
+                      name={exercise.muscleTag?.toLowerCase() === "legs" || exercise.muscleTag?.toLowerCase() === "glutes" ? "run-fast" : "dumbbell"}
+                      size={16}
+                      color={exColor}
+                    />
+                  </View>
+                  <View style={styles.exerciseInfo}>
+                    <Text style={[styles.exerciseName, isNotStarted && styles.exerciseNameDimmed]} numberOfLines={1}>
+                      {exercise.name}
+                    </Text>
+                    <Text style={styles.exerciseSub}>
+                      {isNotStarted
+                        ? "not started"
+                        : `${todaySets} of ${exercise.sets} sets logged`}
+                    </Text>
                   </View>
                   <View style={styles.exerciseRight}>
-                    {exercise.maxWeight > 0 && (
-                      <View style={styles.prBadge}>
-                        <Text style={styles.prText}>
-                          🏆 {format(exercise.maxWeight)}
-                        </Text>
-                      </View>
+                    {exercise.maxWeight > 0 ? (
+                      <Text style={[styles.exerciseMaxWeight, { color: exColor }]}>
+                        {format(exercise.maxWeight)}
+                      </Text>
+                    ) : (
+                      <Text style={styles.exerciseNoData}>—</Text>
                     )}
-                    <Text style={styles.chevron}>›</Text>
+                    <MaterialCommunityIcons name="chevron-right" size={16} color={C.textQuaternary} />
                   </View>
-                </TouchableOpacity>
-              ))}
-
-              {(() => {
-                const muscles = [
-                  ...new Set(exercises.map((e) => e.muscleTag).filter(Boolean)),
-                ] as string[];
-                if (muscles.length === 0) return null;
-                return (
-                  <View style={styles.musclesSection}>
-                    <Text style={styles.musclesLabel}>MUSCLES TODAY</Text>
-                    <View style={styles.muscleChips}>
-                      {muscles.map((m) => (
-                        <View key={m} style={styles.muscleChip}>
-                          <Text style={styles.muscleChipText}>{m}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                );
-              })()}
-
-              <TouchableOpacity
-                style={styles.addMoreBtn}
-                onPress={() => router.push("/(tabs)/exercises")}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.addMoreBtnText}>+ Add more exercises</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Note card or add note button */}
-            {todayNote ? (
-              <View style={styles.noteCard}>
-                <View style={styles.noteCardHeader}>
-                  <Text style={styles.noteCardTitle}>📝 Today's note</Text>
-                  <TouchableOpacity onPress={openNoteModal} activeOpacity={0.7}>
-                    <Text style={styles.noteEditBtn}>Edit</Text>
-                  </TouchableOpacity>
                 </View>
-                <Text style={styles.noteCardText}>{todayNote.text}</Text>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.addNoteBtn}
-                onPress={openNoteModal}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.addNoteBtnText}>📝 Add note for today</Text>
               </TouchableOpacity>
-            )}
-          </>
+            );
+          })
         )}
 
-        <Text style={styles.footer}>QINETIC • {new Date().getFullYear()}</Text>
+        {/* Add more pill */}
+        <TouchableOpacity
+          style={styles.addMorePill}
+          onPress={() => router.push("/(tabs)/exercises")}
+          activeOpacity={0.85}
+        >
+          <MaterialCommunityIcons name="plus" size={16} color={C.accentBlue} />
+          <Text style={styles.addMorePillText}>Add more exercises</Text>
+        </TouchableOpacity>
+
+        {/* Latest note card */}
+        {latestNote && (
+          isNoteFromToday ? (
+            /* State A: today's note */
+            <TouchableOpacity
+              style={styles.noteCard}
+              onPress={() => openNoteModal("edit")}
+              activeOpacity={0.85}
+            >
+              <View style={styles.noteCardHeader}>
+                <View style={styles.noteCardLabelRow}>
+                  <MaterialCommunityIcons name="notebook-outline" size={14} color={C.accentBlue} />
+                  <Text style={styles.noteCardLabel}>TODAY'S NOTE</Text>
+                </View>
+                <MaterialCommunityIcons name="pencil" size={16} color={C.textTertiary} />
+              </View>
+              <Text style={styles.noteCardText}>{latestNote.text}</Text>
+            </TouchableOpacity>
+          ) : (
+            /* State B: old note, prompt to write today's */
+            <TouchableOpacity
+              style={styles.noteCard}
+              onPress={() => openNoteModal("new")}
+              activeOpacity={0.85}
+            >
+              <View style={styles.noteCardHeader}>
+                <View style={styles.noteCardLabelRow}>
+                  <MaterialCommunityIcons name="notebook-outline" size={14} color={C.textTertiary} />
+                  <Text style={styles.noteCardLabelDim}>
+                    LAST NOTE · {formatNoteDate(latestNote.date)}
+                  </Text>
+                </View>
+                <MaterialCommunityIcons name="plus" size={16} color={C.textTertiary} />
+              </View>
+              <Text style={styles.noteCardTextDim}>{latestNote.text}</Text>
+              <Text style={styles.noteCardHint}>Tap to write today's note.</Text>
+            </TouchableOpacity>
+          )
+        )}
+
+        <Text style={styles.footer}>QINETIC · {new Date().getFullYear()}</Text>
       </ScrollView>
 
       <AppBottomSheet
@@ -364,7 +350,7 @@ export default function Home() {
       >
         <View style={{ paddingHorizontal: 24, paddingBottom: 32 }}>
           <Text style={styles.modalTitle}>
-            {todayNote ? "Edit note" : "Add note"}
+            {editingExistingNote ? "Edit note" : "Write today's note"}
           </Text>
           <Text style={styles.modalSub}>
             How did today's workout go? What to improve?
@@ -374,17 +360,14 @@ export default function Home() {
             value={noteText}
             onChangeText={setNoteText}
             placeholder="Write your notes here…"
-            placeholderTextColor="#333333"
+            placeholderTextColor={C.textTertiary}
             multiline
             autoFocus
             maxLength={500}
           />
           <Text style={styles.noteCharCount}>{noteText.length}/500</Text>
           <TouchableOpacity
-            style={[
-              styles.noteSaveBtn,
-              (!noteText.trim() || savingNote) && styles.noteSaveBtnDisabled,
-            ]}
+            style={[styles.noteSaveBtn, (!noteText.trim() || savingNote) && styles.noteSaveBtnDisabled]}
             onPress={handleSaveNote}
             disabled={!noteText.trim() || savingNote}
             activeOpacity={0.85}
@@ -407,429 +390,307 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#000000",
-  },
+  safe: { flex: 1, backgroundColor: C.bgBlack },
   scroll: { flex: 1 },
-  container: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 32,
-  },
+  container: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32 },
 
   // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 28,
+    marginBottom: 20,
   },
   greeting: {
-    fontSize: 14,
-    color: "#555555",
-    fontWeight: "500",
-    letterSpacing: 0.3,
-    marginBottom: 2,
-  },
-  emailName: {
     fontSize: 26,
     fontWeight: "700",
-    color: "#FFD944",
+    color: C.textPrimary,
     letterSpacing: -0.5,
+    marginBottom: 3,
+  },
+  dateSubtitle: {
+    fontSize: 13,
+    color: C.textSecondary,
+    fontWeight: "500",
   },
   avatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "#000000",
+    backgroundColor: C.bgSurface2,
+    borderWidth: 1,
+    borderColor: C.bgSurface3,
     justifyContent: "center",
     alignItems: "center",
     overflow: "hidden",
   },
-  avatarPhoto: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  avatarPhoto: { width: 48, height: 48, borderRadius: 24 },
+  avatarText: { color: C.accentYellow, fontSize: 18, fontWeight: "700" },
+
+  // Stat tiles
+  statTilesRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 12,
   },
-  avatarText: {
-    color: "#FFD944",
-    fontSize: 20,
+  statTile: {
+    flex: 1,
+    backgroundColor: C.bgSurface1,
+    borderRadius: 16,
+    padding: 16,
+  },
+  statTileHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+  },
+  statTileLabel: {
+    fontSize: 10,
     fontWeight: "700",
+    color: C.textSecondary,
+    letterSpacing: 1.2,
+  },
+  statTileValue: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: C.textPrimary,
+    letterSpacing: -0.5,
+    marginBottom: 2,
+  },
+  statTileUnit: {
+    fontSize: 12,
+    color: C.textSecondary,
+    fontWeight: "500",
   },
 
-  // Today row
-  todayRow: {
+  // Progress bar
+  progressTrack: {
+    height: 6,
+    backgroundColor: C.bgSurface2,
+    borderRadius: 3,
+    marginBottom: 24,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: 6,
+    backgroundColor: C.accentYellow,
+    borderRadius: 3,
+  },
+
+  // Section header
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: C.textPrimary,
+  },
+  sectionCount: {
+    fontSize: 13,
+    color: C.textSecondary,
+    fontWeight: "500",
+  },
+
+  loadingBox: { paddingVertical: 40, alignItems: "center" },
+
+  // Rest day
+  restDayRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginBottom: 16,
-  },
-  todayBadge: {
-    backgroundColor: "#000000",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  todayBadgeText: {
-    color: "#FFD944",
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1.5,
-  },
-  todayDay: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#FFD944",
-    letterSpacing: -0.3,
-  },
-
-  // Loading
-  loadingBox: {
-    paddingVertical: 60,
-    alignItems: "center",
-  },
-
-  // Rest day card
-  restCard: {
-    backgroundColor: "#111111",
-    borderRadius: 20,
-    padding: 32,
-    alignItems: "center",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
-    elevation: 4,
-    overflow: "hidden",
-  },
-  restEmoji: {
-    fontSize: 52,
-    marginBottom: 12,
-    marginTop: 8,
-  },
-  restTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#FFD944",
-    marginBottom: 8,
-    letterSpacing: -0.3,
-  },
-  restMessage: {
-    fontSize: 15,
-    color: "#555555",
-    fontWeight: "500",
-    textAlign: "center",
-    lineHeight: 22,
-    marginBottom: 24,
-  },
-  scheduleBtn: {
-    backgroundColor: "#000000",
+    backgroundColor: C.bgSurface1,
     borderRadius: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  scheduleBtnText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#FFD944",
-  },
-
-  // Workout card
-  workoutCard: {
-    backgroundColor: "#111111",
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
-    elevation: 4,
-    overflow: "hidden",
-  },
-  cardAccent: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 4,
-    backgroundColor: "#000000",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-  },
-  workoutCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    padding: 16,
     marginBottom: 8,
-    marginTop: 4,
   },
-  workoutCardTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#FFD944",
-  },
-  workoutCountBadge: {
-    backgroundColor: "#000000",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  workoutCountText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#555555",
+  restDayText: {
+    fontSize: 14,
+    color: C.textSecondary,
+    fontWeight: "500",
   },
 
-  // Exercise rows inside workout card
+  // Exercise rows
   exerciseRow: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 14,
+    backgroundColor: C.bgSurface1,
+    borderRadius: 12,
+    marginBottom: 8,
+    overflow: "hidden",
   },
-  exerciseRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: "#222222",
+  exerciseRowDimmed: { opacity: 0.55 },
+  exerciseColorBar: {
+    width: 4,
   },
-  exerciseLeft: {
+  exerciseInner: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 12,
     gap: 12,
-    flex: 1,
   },
-  exerciseEmojiBox: {
+  exerciseIconTile: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: "#000000",
+    borderRadius: 11,
     justifyContent: "center",
     alignItems: "center",
   },
-  exerciseEmoji: { fontSize: 18 },
+  exerciseInfo: { flex: 1 },
   exerciseName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "700",
-    color: "#FFD944",
+    color: C.textPrimary,
     marginBottom: 2,
   },
-  exerciseMeta: {
+  exerciseNameDimmed: { color: C.textLightGray },
+  exerciseSub: {
     fontSize: 12,
-    color: "#555555",
+    color: C.textSecondary,
     fontWeight: "500",
   },
-  exerciseTagRow: { flexDirection: "row", gap: 4, marginTop: 3 },
-  exTagMuscle: {
-    backgroundColor: "#FFD944",
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  exTagMuscleText: { fontSize: 9, fontWeight: "700", color: "#000000" },
-  exTagType: {
-    backgroundColor: "#222222",
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  exTagTypeText: { fontSize: 9, fontWeight: "700", color: "#FFD944" },
   exerciseRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
   },
-  prBadge: {
-    backgroundColor: "#FFD944",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  prText: {
-    fontSize: 11,
+  exerciseMaxWeight: {
+    fontSize: 13,
     fontWeight: "700",
-    color: "#000000",
   },
-  chevron: {
-    fontSize: 22,
-    color: "#555555",
-    fontWeight: "300",
+  exerciseNoData: {
+    fontSize: 16,
+    color: C.textTertiary,
+    fontWeight: "500",
   },
 
-  // Muscles today
-  musclesSection: {
-    marginTop: 14,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: "#222222",
-  },
-  musclesLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#555555",
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  muscleChips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  muscleChip: {
-    backgroundColor: "#000000",
-    borderWidth: 1,
-    borderColor: "#222222",
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  muscleChipText: { fontSize: 11, fontWeight: "600", color: "#FFD944" },
-
-  // Add more button
-  addMoreBtn: {
-    marginTop: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: "#000000",
+  // Add more pill
+  addMorePill: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: C.bgSurface1,
+    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    marginTop: 4,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: C.accentBlueBg,
   },
-  addMoreBtnText: {
+  addMorePillText: {
     fontSize: 14,
-    fontWeight: "700",
-    color: "#FFD944",
+    fontWeight: "600",
+    color: C.accentBlue,
   },
 
   // Note card
   noteCard: {
-    backgroundColor: "#111111",
-    borderRadius: 16,
+    backgroundColor: C.bgSurface1,
+    borderRadius: 14,
     padding: 16,
-    marginTop: 10,
-    borderLeftWidth: 3,
-    borderLeftColor: "#FFD944",
+    marginTop: 4,
+    marginBottom: 8,
   },
   noteCardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  noteCardTitle: { fontSize: 13, fontWeight: "700", color: "#FFD944" },
-  noteEditBtn: { fontSize: 12, fontWeight: "600", color: "#555555" },
-  noteCardText: { fontSize: 14, color: "#FFD944", lineHeight: 20, fontWeight: "400" },
-  addNoteBtn: {
-    backgroundColor: "#111111",
-    borderRadius: 14,
-    paddingVertical: 14,
+  noteCardLabelRow: {
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 10,
-    borderWidth: 1.5,
-    borderColor: "#222222",
-    borderStyle: "dashed",
+    gap: 6,
   },
-  addNoteBtnText: { fontSize: 14, fontWeight: "600", color: "#555555" },
+  noteCardLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.textSecondary,
+    letterSpacing: 1.2,
+  },
+  noteCardLabelDim: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.textTertiary,
+    letterSpacing: 1.2,
+  },
+  noteCardText: {
+    fontSize: 14,
+    color: C.textPrimary,
+    lineHeight: 21,
+    fontWeight: "400",
+  },
+  noteCardTextDim: {
+    fontSize: 14,
+    color: C.textLightGray,
+    lineHeight: 21,
+    fontWeight: "400",
+    opacity: 0.7,
+  },
+  noteCardHint: {
+    fontSize: 12,
+    color: C.textTertiary,
+    fontWeight: "500",
+    marginTop: 8,
+  },
 
   // Note sheet
   modalTitle: {
     fontSize: 22,
     fontWeight: "700",
-    color: "#FFD944",
+    color: C.accentYellow,
     marginBottom: 4,
   },
   modalSub: {
     fontSize: 13,
-    color: "#555555",
+    color: C.textSecondary,
     fontWeight: "500",
     marginBottom: 16,
   },
   noteInput: {
-    backgroundColor: "#000000",
+    backgroundColor: C.bgBlack,
     borderRadius: 14,
     padding: 16,
     fontSize: 15,
-    color: "#FFD944",
+    color: C.textPrimary,
     fontWeight: "400",
     minHeight: 120,
     textAlignVertical: "top",
     borderWidth: 1.5,
-    borderColor: "#222222",
+    borderColor: C.bgSurface3,
   },
   noteCharCount: {
     fontSize: 11,
-    color: "#333333",
+    color: C.textTertiary,
     textAlign: "right",
     marginTop: 6,
     marginBottom: 16,
   },
   noteSaveBtn: {
-    backgroundColor: "#FFD944",
+    backgroundColor: C.accentYellow,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
     marginBottom: 8,
   },
-  noteSaveBtnDisabled: { backgroundColor: "#333333" },
-  noteSaveBtnText: { color: "#000000", fontSize: 16, fontWeight: "700" },
+  noteSaveBtnDisabled: { backgroundColor: C.bgSurface3 },
+  noteSaveBtnText: { color: C.accentYellowText, fontSize: 16, fontWeight: "700" },
   modalCancelBtn: { paddingVertical: 12, alignItems: "center" },
-  modalCancelText: { fontSize: 15, color: "#555555", fontWeight: "600" },
+  modalCancelText: { fontSize: 15, color: C.textSecondary, fontWeight: "600" },
 
   footer: {
     textAlign: "center",
     fontSize: 11,
-    color: "#555555",
+    color: C.textTertiary,
     letterSpacing: 1,
     fontWeight: "500",
     marginTop: 16,
-  },
-
-  // Streak banner
-  streakBanner: {
-    backgroundColor: "#111111",
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 14,
-  },
-  streakFireEmoji: {
-    fontSize: 28,
-    marginRight: 12,
-  },
-  streakInfo: {
-    flex: 1,
-  },
-  streakLabel: {
-    fontSize: 11,
-    color: "#555555",
-    fontWeight: "700",
-    letterSpacing: 1,
-  },
-  streakDays: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#FFD944",
-  },
-  streakRing: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 3,
-    backgroundColor: "#000000",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  streakRingPct: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#FFD944",
-  },
-  streakRingSmall: {
-    fontSize: 10,
-    color: "#555555",
-  },
-  streakRingBox: {
-    width: 52,
-    height: 52,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  streakRingEmoji: {
-    fontSize: 22,
   },
 });
