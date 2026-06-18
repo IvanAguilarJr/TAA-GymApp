@@ -11,6 +11,7 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -34,7 +35,10 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
       if (error) {
         if (error.message.toLowerCase().includes("email not confirmed")) {
           // Route to verify-email with the entered address so the user can resend
@@ -84,9 +88,11 @@ export default function Login() {
           <View style={styles.container}>
             {/* Top branding */}
             <View style={styles.brandBlock}>
-              <View style={styles.logoBox}>
-                <Text style={styles.logoText}>TAA</Text>
-              </View>
+              <Image
+                source={require("../../assets/images/QINETIC_DuckIcon.png")}
+                style={{ width: 100, height: 100, marginBottom: 16 }}
+                resizeMode="contain"
+              />
               <Text style={styles.title}>Welcome back</Text>
               <Text style={styles.subtitle}>Sign in to continue</Text>
             </View>
@@ -140,21 +146,29 @@ export default function Login() {
 
               {/* Google Sign-In button */}
               <TouchableOpacity
-                style={[styles.googleBtn, googleLoading && styles.btnDisabled]}
                 onPress={handleGoogleSignIn}
-                activeOpacity={0.85}
                 disabled={loading || googleLoading}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: "#1A1A1A",
+                  borderRadius: 14,
+                  paddingVertical: 14,
+                  paddingHorizontal: 24,
+                  gap: 10,
+                  borderWidth: 1,
+                  borderColor: "#2A2A2A",
+                }}
               >
-                {googleLoading ? (
-                  <ActivityIndicator size="small" color="#FFD944" />
-                ) : (
-                  <>
-                    <Text style={styles.googleIcon}>G</Text>
-                    <Text style={styles.googleBtnText}>
-                      Continue with Google
-                    </Text>
-                  </>
-                )}
+                <Image
+                  source={require("../../assets/images/Google-Icon.png")}
+                  style={{ width: 20, height: 20 }}
+                  resizeMode="contain"
+                />
+                <Text style={{ color: "#EEEDE9", fontSize: 16, fontWeight: "600" }}>
+                  Continue with Google
+                </Text>
               </TouchableOpacity>
 
               {/* Apple Sign-In button — UI only, not wired up (no Apple Developer account yet) */}
@@ -184,7 +198,7 @@ export default function Login() {
             </View>
 
             <Text style={styles.copyright}>
-              TAA • {new Date().getFullYear()}
+              By QuackQuick | {new Date().getFullYear()}
             </Text>
           </View>
         </KeyboardAvoidingView>
@@ -210,26 +224,6 @@ const styles = StyleSheet.create({
   brandBlock: {
     alignItems: "center",
     marginBottom: 36,
-  },
-  logoBox: {
-    width: 64,
-    height: 64,
-    borderRadius: 18,
-    backgroundColor: "#000000",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 20,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  logoText: {
-    color: "#000000",
-    fontSize: 18,
-    fontWeight: "800",
-    letterSpacing: 1.5,
   },
   title: {
     fontSize: 28,

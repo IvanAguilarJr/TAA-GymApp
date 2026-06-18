@@ -50,7 +50,9 @@ export default function Settings() {
   const fetchProfile = async () => {
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
       setUserId(user.id);
       setUserEmail(user.email ?? null);
@@ -76,7 +78,10 @@ export default function Settings() {
   const handlePickPhoto = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert("Permission needed", "Please allow access to your photo library.");
+      Alert.alert(
+        "Permission needed",
+        "Please allow access to your photo library.",
+      );
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -100,7 +105,8 @@ export default function Settings() {
   };
 
   const getInitials = () => {
-    if (profile?.displayName) return profile.displayName.charAt(0).toUpperCase();
+    if (profile?.displayName)
+      return profile.displayName.charAt(0).toUpperCase();
     if (userEmail) return userEmail.charAt(0).toUpperCase();
     return "?";
   };
@@ -131,7 +137,9 @@ export default function Settings() {
   const handleChangeEmail = async () => {
     if (!newEmail.trim()) return;
     try {
-      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
+      const { error } = await supabase.auth.updateUser({
+        email: newEmail.trim(),
+      });
       if (error) throw error;
       Alert.alert(
         "Verification sent",
@@ -154,7 +162,9 @@ export default function Settings() {
       return;
     }
     try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
       if (error) throw error;
       Alert.alert("Done", "Password updated successfully.");
       setNewPassword("");
@@ -165,7 +175,7 @@ export default function Settings() {
   };
 
   const handlePrivacyPolicy = () => {
-    Linking.openURL("https://quackquick.org");
+    Linking.openURL("https://quackquick.org/projects/qinetic/privacy");
   };
 
   const handleSignOut = () => {
@@ -194,9 +204,11 @@ export default function Settings() {
           onPress: async () => {
             setDeleting(true);
             try {
-              const { data, error } = await supabase.functions.invoke("delete-account");
+              const { data, error } =
+                await supabase.functions.invoke("delete-account");
               if (error) throw error;
-              if (!data?.success) throw new Error("Unexpected response from server.");
+              if (!data?.success)
+                throw new Error("Unexpected response from server.");
               // Clear the local session — the server already deleted the auth record.
               await supabase.auth.signOut();
               router.replace("/");
@@ -388,13 +400,13 @@ export default function Settings() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Section: Danger Zone ── */}
-        <SectionLabel label="DANGER ZONE" />
+        {/* ── Section: More ── */}
+        <SectionLabel label="MORE" />
         <View style={styles.card}>
-          <View style={[styles.cardAccent, { backgroundColor: "#EF4444" }]} />
+          <View style={styles.cardAccent} />
 
           <TouchableOpacity
-            style={[styles.secondaryBtn, { marginBottom: 10 }]}
+            style={styles.secondaryBtn}
             onPress={handlePrivacyPolicy}
             activeOpacity={0.85}
           >
@@ -402,12 +414,18 @@ export default function Settings() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.logoutBtn}
+            style={[styles.logoutBtn, { marginBottom: 0 }]}
             onPress={handleSignOut}
             activeOpacity={0.85}
           >
             <Text style={styles.logoutText}>Sign out</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* ── Section: Danger Zone ── */}
+        <SectionLabel label="DANGER ZONE" />
+        <View style={styles.card}>
+          <View style={[styles.cardAccent, { backgroundColor: "#EF4444" }]} />
 
           <TouchableOpacity
             style={[styles.deleteBtn, deleting && styles.deleteBtnDisabled]}
@@ -423,7 +441,9 @@ export default function Settings() {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.footer}>QINETIC • {new Date().getFullYear()}</Text>
+        <Text style={styles.footer}>
+          By QuackQuick | {new Date().getFullYear()}
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );

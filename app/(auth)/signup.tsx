@@ -10,6 +10,7 @@ import {
   Keyboard,
   Platform,
   TouchableWithoutFeedback,
+  Image,
 } from "react-native";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -74,6 +75,15 @@ export default function Signup() {
               <View style={styles.logoBox}>
                 <Text style={styles.logoText}>Q</Text>
               </View>
+              <Image
+                source={require('../../assets/images/QINETIC_DuckIcon.png')}
+                style={{
+                  width: 100,
+                  height: 100,
+                  marginBottom: 16,
+                }}
+                resizeMode="contain"
+              />
               <Text style={styles.title}>Create account</Text>
               <Text style={styles.subtitle}>Sign up to get started</Text>
             </View>
@@ -151,7 +161,7 @@ export default function Signup() {
             </View>
 
             <Text style={styles.copyright}>
-              QINETIC • {new Date().getFullYear()}
+              By QuackQuick | {new Date().getFullYear()}
             </Text>
           </View>
         </KeyboardAvoidingView>

@@ -30,10 +30,11 @@ const DAY_FULL: Record<Day, string> = {
   Fri: "Friday", Sat: "Saturday", Sun: "Sunday", None: "Unscheduled",
 };
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS_UPPER = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 
-function formatNoteWeekday(isoString: string): string {
-  return WEEKDAYS[new Date(isoString).getDay()];
+function formatTodayDate(): string {
+  const d = new Date();
+  return `${MONTHS_UPPER[d.getMonth()]} ${d.getDate()}`;
 }
 
 function getTodaySetsCount(exercise: Exercise): number {
@@ -54,7 +55,6 @@ export default function Home() {
     currentStreak: number;
     todayCompletion: { completed: number; total: number; percentage: number; isRestDay: boolean };
   } | null>(null);
-  const [latestNote, setLatestNote] = useState<WeekNote | null>(null);
   const [todayNote, setTodayNote] = useState<WeekNote | null>(null);
   const noteSheetRef = useRef<BottomSheetModal>(null);
   const [noteText, setNoteText] = useState("");
@@ -86,7 +86,6 @@ export default function Home() {
         todayCompletion: getTodayCompletion(allExercises),
       });
       const todayStr = new Date().toISOString().split("T")[0];
-      setLatestNote(weekNotes[0] ?? null);
       setTodayNote(weekNotes.find((n) => n.noteDate === todayStr) ?? null);
     } catch {
       // fail silently on home screen
@@ -114,7 +113,6 @@ export default function Home() {
     try {
       const saved = await saveNote(userId, noteText.trim());
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setLatestNote(saved);
       setTodayNote(saved);
       noteSheetRef.current?.dismiss();
     } catch (err) {
@@ -296,29 +294,31 @@ export default function Home() {
           <Text style={styles.addMorePillText}>Add more exercises</Text>
         </TouchableOpacity>
 
-        {/* Latest note card — only renders if there are notes this week */}
-        {latestNote && (
-          <View style={styles.noteCard}>
-            <View style={styles.noteColorBar} />
-            <View style={styles.noteCardInner}>
-              <View style={styles.noteCardContent}>
-                <Text style={styles.noteCardEyebrow}>
-                  LATEST NOTE · {formatNoteWeekday(latestNote.createdAt)}
-                </Text>
-                <Text style={styles.noteCardText} numberOfLines={2}>
-                  {latestNote.text}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.noteAddBtn}
-                onPress={openNoteModal}
-                activeOpacity={0.85}
-              >
-                <MaterialCommunityIcons name="plus" size={18} color={C.accentYellowText} />
-              </TouchableOpacity>
+        {/* Note row — always visible */}
+        <TouchableOpacity
+          style={styles.noteCard}
+          onPress={openNoteModal}
+          activeOpacity={0.7}
+        >
+          <View style={styles.noteColorBar} />
+          <View style={styles.noteCardInner}>
+            <View style={styles.noteCardContent}>
+              <Text style={styles.noteCardEyebrow}>{formatTodayDate()}</Text>
+              {todayNote ? (
+                <Text style={styles.noteCardText} numberOfLines={2}>{todayNote.text}</Text>
+              ) : (
+                <Text style={[styles.noteCardText, { color: C.textTertiary }]}>Tap to add a note…</Text>
+              )}
+            </View>
+            <View style={styles.noteAddBtn}>
+              <MaterialCommunityIcons
+                name={todayNote ? "pencil-outline" : "plus"}
+                size={18}
+                color={C.accentYellowText}
+              />
             </View>
           </View>
-        )}
+        </TouchableOpacity>
 
         <Text style={styles.footer}>QINETIC · {new Date().getFullYear()}</Text>
       </ScrollView>

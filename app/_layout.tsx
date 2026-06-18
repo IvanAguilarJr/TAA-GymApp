@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import type { Session } from "@supabase/supabase-js";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { configureGoogleSignIn } from "@/lib/googleAuth";
 import { WeightUnitProvider } from "@/app/context/WeightUnitContext";
