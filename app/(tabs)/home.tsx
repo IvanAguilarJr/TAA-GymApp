@@ -2,8 +2,7 @@ import { Image } from "expo-image";
 import { supabase } from "@/lib/supabase";
 import { getExercises, getExercisesByDay } from "@/supabase/exercises";
 import { getCurrentStreak, getTodayCompletion } from "@/lib/streaks";
-import { getLatestNote, saveDayNote } from "@/supabase/notes";
-import { DayNote } from "@/supabase/notes";
+import { getWeekNotes, saveNote, cleanupOldNotes, WeekNote } from "@/supabase/notes";
 import { Exercise, DAY_MAP, Day } from "@/lib/types";
 import { C, getExerciseTileBg } from "@/lib/colors";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -31,15 +30,14 @@ const DAY_FULL: Record<Day, string> = {
   Fri: "Friday", Sat: "Saturday", Sun: "Sunday", None: "Unscheduled",
 };
 
-const todayStr = new Date().toISOString().split("T")[0];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-function formatNoteDate(dateStr: string): string {
-  const parts = dateStr.split("-");
-  const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase();
+function formatNoteWeekday(isoString: string): string {
+  return WEEKDAYS[new Date(isoString).getDay()];
 }
 
 function getTodaySetsCount(exercise: Exercise): number {
+  const todayStr = new Date().toISOString().split("T")[0];
   return exercise.history
     .filter((e) => e.date.split("T")[0] === todayStr)
     .reduce((sum, e) => sum + e.sets.length, 0);
@@ -56,16 +54,14 @@ export default function Home() {
     currentStreak: number;
     todayCompletion: { completed: number; total: number; percentage: number; isRestDay: boolean };
   } | null>(null);
-  const [latestNote, setLatestNote] = useState<DayNote | null>(null);
+  const [latestNote, setLatestNote] = useState<WeekNote | null>(null);
+  const [todayNote, setTodayNote] = useState<WeekNote | null>(null);
   const noteSheetRef = useRef<BottomSheetModal>(null);
   const [noteText, setNoteText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
-  const [editingExistingNote, setEditingExistingNote] = useState(false);
 
   const today: Day = DAY_MAP[new Date().getDay()];
   const { format } = useWeightUnit();
-
-  const isNoteFromToday = latestNote?.date === todayStr;
 
   const fetchData = async () => {
     setLoading(true);
@@ -75,11 +71,12 @@ export default function Home() {
       if (!userId) setUserId(user.id);
       if (!userEmail) setUserEmail(user.email ?? null);
       const uid = user.id;
-      const [data, profile, allExercises, note] = await Promise.all([
+      await cleanupOldNotes(uid).catch(() => {});
+      const [data, profile, allExercises, weekNotes] = await Promise.all([
         getExercisesByDay(uid, today),
         getUserProfile(uid),
         getExercises(uid),
-        getLatestNote(uid),
+        getWeekNotes(uid),
       ]);
       setExercises(data);
       if (profile?.displayName) setDisplayName(profile.displayName);
@@ -88,7 +85,9 @@ export default function Home() {
         currentStreak: getCurrentStreak(allExercises),
         todayCompletion: getTodayCompletion(allExercises),
       });
-      setLatestNote(note);
+      const todayStr = new Date().toISOString().split("T")[0];
+      setLatestNote(weekNotes[0] ?? null);
+      setTodayNote(weekNotes.find((n) => n.noteDate === todayStr) ?? null);
     } catch {
       // fail silently on home screen
     } finally {
@@ -102,9 +101,9 @@ export default function Home() {
     }, []),
   );
 
-  const openNoteModal = (mode: "edit" | "new") => {
-    setEditingExistingNote(mode === "edit");
-    setNoteText(mode === "edit" ? (latestNote?.text ?? "") : "");
+  const openNoteModal = () => {
+    // Prefill with today's existing note text if one already exists (edit mode)
+    setNoteText(todayNote?.text ?? "");
     noteSheetRef.current?.present();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
@@ -113,16 +112,13 @@ export default function Home() {
     if (!noteText.trim()) return;
     setSavingNote(true);
     try {
-      await saveDayNote(userId, todayStr, noteText.trim());
+      const saved = await saveNote(userId, noteText.trim());
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setLatestNote({
-        date: todayStr,
-        text: noteText.trim(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+      setLatestNote(saved);
+      setTodayNote(saved);
       noteSheetRef.current?.dismiss();
-    } catch {
+    } catch (err) {
+      console.error("[home] saveNote failed:", err);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setSavingNote(false);
@@ -300,44 +296,28 @@ export default function Home() {
           <Text style={styles.addMorePillText}>Add more exercises</Text>
         </TouchableOpacity>
 
-        {/* Latest note card */}
+        {/* Latest note card — only renders if there are notes this week */}
         {latestNote && (
-          isNoteFromToday ? (
-            /* State A: today's note */
-            <TouchableOpacity
-              style={styles.noteCard}
-              onPress={() => openNoteModal("edit")}
-              activeOpacity={0.85}
-            >
-              <View style={styles.noteCardHeader}>
-                <View style={styles.noteCardLabelRow}>
-                  <MaterialCommunityIcons name="notebook-outline" size={14} color={C.accentBlue} />
-                  <Text style={styles.noteCardLabel}>TODAY'S NOTE</Text>
-                </View>
-                <MaterialCommunityIcons name="pencil" size={16} color={C.textTertiary} />
+          <View style={styles.noteCard}>
+            <View style={styles.noteColorBar} />
+            <View style={styles.noteCardInner}>
+              <View style={styles.noteCardContent}>
+                <Text style={styles.noteCardEyebrow}>
+                  LATEST NOTE · {formatNoteWeekday(latestNote.createdAt)}
+                </Text>
+                <Text style={styles.noteCardText} numberOfLines={2}>
+                  {latestNote.text}
+                </Text>
               </View>
-              <Text style={styles.noteCardText}>{latestNote.text}</Text>
-            </TouchableOpacity>
-          ) : (
-            /* State B: old note, prompt to write today's */
-            <TouchableOpacity
-              style={styles.noteCard}
-              onPress={() => openNoteModal("new")}
-              activeOpacity={0.85}
-            >
-              <View style={styles.noteCardHeader}>
-                <View style={styles.noteCardLabelRow}>
-                  <MaterialCommunityIcons name="notebook-outline" size={14} color={C.textTertiary} />
-                  <Text style={styles.noteCardLabelDim}>
-                    LAST NOTE · {formatNoteDate(latestNote.date)}
-                  </Text>
-                </View>
-                <MaterialCommunityIcons name="plus" size={16} color={C.textTertiary} />
-              </View>
-              <Text style={styles.noteCardTextDim}>{latestNote.text}</Text>
-              <Text style={styles.noteCardHint}>Tap to write today's note.</Text>
-            </TouchableOpacity>
-          )
+              <TouchableOpacity
+                style={styles.noteAddBtn}
+                onPress={openNoteModal}
+                activeOpacity={0.85}
+              >
+                <MaterialCommunityIcons name="plus" size={18} color={C.accentYellowText} />
+              </TouchableOpacity>
+            </View>
+          </View>
         )}
 
         <Text style={styles.footer}>QINETIC · {new Date().getFullYear()}</Text>
@@ -350,10 +330,10 @@ export default function Home() {
       >
         <View style={{ paddingHorizontal: 24, paddingBottom: 32 }}>
           <Text style={styles.modalTitle}>
-            {editingExistingNote ? "Edit note" : "Write today's note"}
+            {todayNote ? "Edit today's note" : "New note"}
           </Text>
           <Text style={styles.modalSub}>
-            How did today's workout go? What to improve?
+            How did the session go? What to improve?
           </Text>
           <TextInput
             style={styles.noteInput}
@@ -590,55 +570,50 @@ const styles = StyleSheet.create({
     color: C.accentBlue,
   },
 
-  // Note card
+  // Note card — inset yellow bar sits inside padded card
   noteCard: {
+    flexDirection: "row",
+    alignItems: "stretch",
     backgroundColor: C.bgSurface1,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 12,
     marginTop: 4,
     marginBottom: 8,
+    padding: 14,
+    gap: 12,
   },
-  noteCardHeader: {
+  noteColorBar: {
+    width: 3,
+    backgroundColor: C.accentYellow,
+    borderRadius: 2,
+    alignSelf: "stretch",
+  },
+  noteCardInner: {
+    flex: 1,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    gap: 12,
   },
-  noteCardLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  noteCardLabel: {
+  noteCardContent: { flex: 1 },
+  noteCardEyebrow: {
     fontSize: 11,
     fontWeight: "700",
     color: C.textSecondary,
     letterSpacing: 1.2,
-  },
-  noteCardLabelDim: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: C.textTertiary,
-    letterSpacing: 1.2,
+    marginBottom: 4,
   },
   noteCardText: {
     fontSize: 14,
     color: C.textPrimary,
-    lineHeight: 21,
+    lineHeight: 20,
     fontWeight: "400",
   },
-  noteCardTextDim: {
-    fontSize: 14,
-    color: C.textLightGray,
-    lineHeight: 21,
-    fontWeight: "400",
-    opacity: 0.7,
-  },
-  noteCardHint: {
-    fontSize: 12,
-    color: C.textTertiary,
-    fontWeight: "500",
-    marginTop: 8,
+  noteAddBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    backgroundColor: C.accentYellow,
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   // Note sheet

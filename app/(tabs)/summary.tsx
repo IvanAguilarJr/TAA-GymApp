@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { getExercises } from "@/supabase/exercises";
 import { Exercise } from "@/lib/types";
-import { getAllNotes, DayNote } from "@/supabase/notes";
+import { getWeekNotes, deleteNote, cleanupOldNotes, WeekNote, getCurrentWeekRange } from "@/supabase/notes";
 import {
   Text,
   View,
@@ -19,6 +19,7 @@ import { getCurrentStreak, getLongestStreak, getTodayCompletion } from "@/lib/st
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Svg, { Circle } from "react-native-svg";
 import { C, getExerciseTileBg } from "@/lib/colors";
+import * as Haptics from "expo-haptics";
 
 function CircularProgress({ percentage, size = 72 }: { percentage: number; size?: number }) {
   const sw = 5;
@@ -56,12 +57,6 @@ function CircularProgress({ percentage, size = 72 }: { percentage: number; size?
   );
 }
 
-function getExerciseIcon(exercise: Exercise): keyof typeof MaterialCommunityIcons.glyphMap {
-  const muscle = exercise.muscleTag?.toLowerCase() ?? "";
-  if (muscle === "legs" || muscle === "glutes") return "run-fast";
-  return "dumbbell";
-}
-
 function getDaysAgo(isoDate: string): number {
   const d = new Date(isoDate);
   const now = new Date();
@@ -70,11 +65,23 @@ function getDaysAgo(isoDate: string): number {
   return Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+const WEEKDAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function formatNoteDay(isoString: string): string {
+  const d = new Date(isoString);
+  return `${WEEKDAYS_SHORT[d.getDay()].toUpperCase()}, ${MONTHS_SHORT[d.getMonth()].toUpperCase()} ${d.getDate()}`;
+}
+
+function formatWeekRange(start: Date, end: Date): string {
+  const s = `${MONTHS_SHORT[start.getMonth()]} ${start.getDate()}`;
+  const e = `${MONTHS_SHORT[end.getMonth()]} ${end.getDate()}`;
+  return `${s} – ${e}`;
+}
+
 export default function Summary() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [notes, setNotes] = useState<DayNote[]>([]);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [notes, setNotes] = useState<WeekNote[]>([]);
   const [loading, setLoading] = useState(true);
   const { format } = useWeightUnit();
 
@@ -83,12 +90,13 @@ export default function Summary() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const [data, allNotes] = await Promise.all([
+      await cleanupOldNotes(user.id).catch(() => {});
+      const [data, weekNotes] = await Promise.all([
         getExercises(user.id),
-        getAllNotes(user.id),
+        getWeekNotes(user.id),
       ]);
       setExercises(data);
-      setNotes(allNotes);
+      setNotes(weekNotes);
     } catch {
       // fail silently
     } finally {
@@ -97,6 +105,16 @@ export default function Summary() {
   };
 
   useFocusEffect(useCallback(() => { fetchData(); }, []));
+
+  const handleDeleteNote = async (noteId: string) => {
+    try {
+      await deleteNote(noteId);
+      setNotes((prev) => prev.filter((n) => n.id !== noteId));
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  };
 
   const totalSessions = exercises.reduce((sum, e) => sum + e.history.length, 0);
   const totalPRs = exercises.filter((e) => e.maxWeight > 0).length;
@@ -116,92 +134,8 @@ export default function Summary() {
   const longestStreak = getLongestStreak(exercises);
   const todayCompletion = getTodayCompletion(exercises);
 
-  const getWeekKey = (date: string) => {
-    const d = new Date(date);
-    const startOfYear = new Date(d.getFullYear(), 0, 1);
-    const week = Math.ceil(
-      ((d.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7,
-    );
-    return `${d.getFullYear()}-W${String(week).padStart(2, "0")}`;
-  };
-
-  const getMonthKey = (date: string) => date.slice(0, 7);
-  const getYearKey = (date: string) => date.slice(0, 4);
-
-  const formatDateLabel = (date: string) =>
-    new Date(date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-
-  const formatMonthLabel = (key: string) => {
-    const [year, month] = key.split("-");
-    return new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString("en-US", {
-      month: "long",
-      year: "numeric",
-    });
-  };
-
-  const toggleGroup = (key: string) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-  };
-
-  const renderNotesContent = () => {
-    if (notes.length === 0) {
-      return (
-        <Text style={styles.notesEmpty}>No notes yet. Add one from the Home tab.</Text>
-      );
-    }
-
-    const byYear: Record<string, Record<string, Record<string, DayNote[]>>> = {};
-    notes.forEach((note) => {
-      const y = getYearKey(note.date);
-      const m = getMonthKey(note.date);
-      const w = getWeekKey(note.date);
-      if (!byYear[y]) byYear[y] = {};
-      if (!byYear[y][m]) byYear[y][m] = {};
-      if (!byYear[y][m][w]) byYear[y][m][w] = [];
-      byYear[y][m][w].push(note);
-    });
-
-    return Object.entries(byYear).map(([year, months]) => (
-      <View key={year}>
-        <TouchableOpacity style={styles.noteGroupHeader} onPress={() => toggleGroup(year)} activeOpacity={0.7}>
-          <Text style={styles.noteGroupTitle}>{year}</Text>
-          <MaterialCommunityIcons name={expandedGroups.has(year) ? "chevron-down" : "chevron-right"} size={16} color={C.textTertiary} />
-        </TouchableOpacity>
-
-        {expandedGroups.has(year) &&
-          Object.entries(months).map(([monthKey, weeks]) => (
-            <View key={monthKey} style={styles.noteMonthBlock}>
-              <TouchableOpacity style={styles.noteMonthHeader} onPress={() => toggleGroup(monthKey)} activeOpacity={0.7}>
-                <Text style={styles.noteMonthTitle}>{formatMonthLabel(monthKey)}</Text>
-                <MaterialCommunityIcons name={expandedGroups.has(monthKey) ? "chevron-down" : "chevron-right"} size={14} color={C.textTertiary} />
-              </TouchableOpacity>
-
-              {expandedGroups.has(monthKey) &&
-                Object.entries(weeks).map(([weekKey, dayNotes]) => (
-                  <View key={weekKey} style={styles.noteWeekBlock}>
-                    <TouchableOpacity style={styles.noteWeekHeader} onPress={() => toggleGroup(weekKey)} activeOpacity={0.7}>
-                      <Text style={styles.noteWeekTitle}>{weekKey.replace("-", " · ")}</Text>
-                      <MaterialCommunityIcons name={expandedGroups.has(weekKey) ? "chevron-down" : "chevron-right"} size={12} color={C.textTertiary} />
-                    </TouchableOpacity>
-
-                    {expandedGroups.has(weekKey) &&
-                      dayNotes.map((note) => (
-                        <View key={note.date} style={styles.noteDayCard}>
-                          <Text style={styles.noteDayDate}>{formatDateLabel(note.date)}</Text>
-                          <Text style={styles.noteDayText}>{note.text}</Text>
-                        </View>
-                      ))}
-                  </View>
-                ))}
-            </View>
-          ))}
-      </View>
-    ));
-  };
+  const { start: weekStart, end: weekEnd } = getCurrentWeekRange();
+  const weekRangeLabel = formatWeekRange(weekStart, weekEnd);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -317,34 +251,59 @@ export default function Summary() {
               </>
             )}
 
-            {/* Notes — always renders */}
-            <View style={styles.notesSection}>
-              <TouchableOpacity
-                style={styles.notesRow}
-                onPress={() => setNotesExpanded((v) => !v)}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.notesIconTile, { backgroundColor: C.accentBlueBg }]}>
-                  <MaterialCommunityIcons name="notebook-outline" size={18} color={C.accentBlue} />
+            {/* Notes — always renders as one consolidated card */}
+            <View style={styles.notesMegaCard}>
+              {/* Header row */}
+              <View style={styles.notesMegaHeader}>
+                <View style={styles.notesHeaderIconTile}>
+                  <MaterialCommunityIcons name="notebook-outline" size={16} color={C.accentBlue} />
                 </View>
-                <Text style={styles.notesLabel}>Notes</Text>
-                {notes.length > 0 && (
-                  <View style={styles.notesBadge}>
-                    <Text style={styles.notesBadgeText}>{notes.length}</Text>
-                  </View>
-                )}
-                <View style={{ flex: 1 }} />
-                <MaterialCommunityIcons
-                  name={notesExpanded ? "chevron-up" : "chevron-right"}
-                  size={20}
-                  color={C.textQuaternary}
-                />
-              </TouchableOpacity>
+                <Text style={styles.notesSectionTitle}>Weekly Notes</Text>
+              </View>
 
-              {notesExpanded && (
-                <View style={styles.notesContent}>
-                  {renderNotesContent()}
+              <View style={styles.hairline} />
+
+              {/* Week banner row */}
+              <View style={styles.weekBannerRow}>
+                <View>
+                  <Text style={styles.weekBannerEyebrow}>THIS WEEK</Text>
+                  <Text style={styles.weekBannerRange}>{weekRangeLabel}</Text>
                 </View>
+                <View style={styles.resetPill}>
+                  <MaterialCommunityIcons name="refresh" size={11} color={C.textTertiary} />
+                  <Text style={styles.resetPillText}>Resets Sun</Text>
+                </View>
+              </View>
+
+              <View style={styles.hairline} />
+
+              {/* Note rows or empty state */}
+              {notes.length === 0 ? (
+                <View style={styles.notesEmptyRow}>
+                  <MaterialCommunityIcons name="notebook-outline" size={32} color={C.textQuaternary} />
+                  <Text style={styles.notesEmptyText}>
+                    No notes yet this week.{"\n"}Add one after your next session.
+                  </Text>
+                </View>
+              ) : (
+                notes.map((note, index) => (
+                  <View key={note.id}>
+                    <View style={styles.noteRow}>
+                      <View style={styles.noteRowContent}>
+                        <Text style={styles.noteCardDay}>{formatNoteDay(note.createdAt)}</Text>
+                        <Text style={styles.noteCardText}>{note.text}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.noteDeleteBtn}
+                        onPress={() => handleDeleteNote(note.id)}
+                        activeOpacity={0.7}
+                      >
+                        <MaterialCommunityIcons name="close" size={14} color={C.textSecondary} />
+                      </TouchableOpacity>
+                    </View>
+                    {index < notes.length - 1 && <View style={styles.hairline} />}
+                  </View>
+                ))
               )}
             </View>
           </>
@@ -546,93 +505,108 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  // Notes section
-  notesSection: {
+  // Notes — single consolidated card
+  notesMegaCard: {
     backgroundColor: C.bgSurface1,
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: "hidden",
     marginBottom: 12,
   },
-  notesRow: {
+  notesMegaHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
     padding: 16,
   },
-  notesIconTile: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
+  notesHeaderIconTile: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: C.accentBlueBg,
     justifyContent: "center",
     alignItems: "center",
   },
-  notesLabel: {
+  notesSectionTitle: {
     fontSize: 15,
     fontWeight: "600",
     color: C.textPrimary,
   },
-  notesBadge: {
-    backgroundColor: C.bgSurface3,
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+  hairline: {
+    height: HAIRLINE,
+    backgroundColor: C.bgSurface2,
   },
-  notesBadgeText: {
-    fontSize: 11,
-    color: C.textSecondary,
-    fontWeight: "600",
+  weekBannerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
   },
-  notesContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    borderTopWidth: HAIRLINE,
-    borderTopColor: C.bgSurface2,
-    paddingTop: 12,
-  },
-  notesEmpty: {
-    fontSize: 13,
+  weekBannerEyebrow: {
+    fontSize: 10,
+    fontWeight: "700",
     color: C.textTertiary,
-    fontWeight: "500",
-    paddingVertical: 8,
+    letterSpacing: 1.2,
+    marginBottom: 4,
   },
-
-  // Notes hierarchy
-  noteGroupHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: HAIRLINE,
-    borderBottomColor: C.bgSurface2,
+  weekBannerRange: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: C.textPrimary,
   },
-  noteGroupTitle: { fontSize: 15, fontWeight: "700", color: C.textPrimary },
-  noteMonthBlock: { marginLeft: 8, marginTop: 4 },
-  noteMonthHeader: {
+  resetPill: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 8,
-  },
-  noteMonthTitle: { fontSize: 13, fontWeight: "600", color: C.textPrimary },
-  noteWeekBlock: { marginLeft: 8 },
-  noteWeekHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    gap: 5,
+    backgroundColor: C.bgSurface3,
+    borderRadius: 20,
+    paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  noteWeekTitle: { fontSize: 11, fontWeight: "600", color: C.textSecondary, letterSpacing: 0.5 },
-  noteDayCard: {
-    backgroundColor: C.bgBlack,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
-    marginLeft: 8,
-    borderLeftWidth: 2,
-    borderLeftColor: C.accentBlue,
+  resetPillText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: C.textTertiary,
   },
-  noteDayDate: { fontSize: 11, fontWeight: "700", color: C.textSecondary, marginBottom: 4 },
-  noteDayText: { fontSize: 13, color: C.textPrimary, lineHeight: 18, fontWeight: "400" },
+  noteRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    gap: 12,
+  },
+  noteRowContent: { flex: 1 },
+  noteCardDay: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.textSecondary,
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  noteCardText: {
+    fontSize: 14,
+    color: C.textPrimary,
+    lineHeight: 20,
+    fontWeight: "400",
+  },
+  noteDeleteBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: C.bgSurface3,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  notesEmptyRow: {
+    padding: 28,
+    alignItems: "center",
+    gap: 12,
+  },
+  notesEmptyText: {
+    fontSize: 14,
+    color: C.textTertiary,
+    fontWeight: "500",
+    textAlign: "center",
+    lineHeight: 20,
+  },
 
   footer: {
     textAlign: "center",
