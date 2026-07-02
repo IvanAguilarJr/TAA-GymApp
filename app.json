@@ -58,7 +58,8 @@
           "photosPermission": "Allow QINETIC to access your photos to set a profile picture."
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
